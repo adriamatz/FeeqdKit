@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "theme": {
+    "colors": {
+      "primary": {
+        "dark": "#4488FF",
+        "light": "#0055FF"
+      }
+    },
+    "cornerRadius": 12
+  },
+  "behaviour": {
+    "allowVoteUndo": true,
+    "defaultSort": "votes",
+    "emailField": "optional",
+    "showCommentCount": true,
+    "tabs": [
+      "open",
+      "done"
+    ]
+  },
+  "strings": {
+    "es": {
+      "board.title": "Sugerencias",
+      "submit.cta": "Pide una mejora"
+    }
+  },
+  "board_id": "0003BNsEyndh34CwVCh2UokMmOD",
+  "statuses": [
+    {
+      "slug": "pending",
+      "label": "Pending",
+      "category": "open",
+      "position": 0,
+      "color": {
+        "dark": "#8E8E93",
+        "light": "#8E8E93"
+      },
+      "icon_type": "circle-dot"
+    },
+    {
+      "slug": "planned",
+      "label": "Planned",
+      "category": "open",
+      "position": 1,
+      "color": {
+        "dark": "#0A84FF",
+        "light": "#007AFF"
+      },
+      "icon_type": "circle-dot"
+    },
+    {
+      "slug": "in_review",
+      "label": "In review",
+      "category": "open",
+      "position": 2,
+      "color": {
+        "dark": "#64D2FF",
+        "light": "#32ADE6"
+      },
+      "icon_type": "circle-dot"
+    },
+    {
+      "slug": "in_progress",
+      "label": "In progress",
+      "category": "progress",
+      "position": 3,
+      "color": {
+        "dark": "#FF9F0A",
+        "light": "#FF9500"
+      },
+      "icon_type": "circle-dot"
+    },
+    {
+      "slug": "completed",
+      "label": "Completed",
+      "category": "closed",
+      "position": 4,
+      "color": {
+        "dark": "#30D158",
+        "light": "#34C759"
+      },
+      "icon_type": "circle-check"
+    }
+  ]
+}

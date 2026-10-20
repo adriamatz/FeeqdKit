@@ -1,0 +1,4 @@
+{
+  "error": "device_id_required",
+  "message": "X-Feeqd-Device-Id header is required"
+}

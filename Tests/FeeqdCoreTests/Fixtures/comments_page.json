@@ -1,0 +1,35 @@
+{
+  "items": [
+    {
+      "id": "0003BNsEz27agPfFB1g3nzv0JPe",
+      "parent_id": null,
+      "content": "Yes please, my eyes hurt.",
+      "author_name": null,
+      "author_type": "anonymous",
+      "is_team_member": false,
+      "is_pinned": false,
+      "created_at": "2026-09-11T07:18:14.65844",
+      "edited_at": null
+    },
+    {
+      "id": "0003BNsEz2EkikJq7NW398Tabbt",
+      "parent_id": "0003BNsEz27agPfFB1g3nzv0JPe",
+      "content": "Same here.",
+      "author_name": null,
+      "author_type": "anonymous",
+      "is_team_member": false,
+      "is_pinned": false,
+      "created_at": "2026-09-11T07:18:14.662474",
+      "edited_at": null
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "page_size": 20,
+    "total_items": 2,
+    "total_pages": 1,
+    "has_next": false,
+    "has_previous": false,
+    "next_cursor": null
+  }
+}

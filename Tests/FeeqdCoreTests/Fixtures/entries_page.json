@@ -1,0 +1,106 @@
+{
+  "items": [
+    {
+      "id": "0003BNsEyoDrlLzjZ55HPXmoCv3",
+      "board_id": "0003BNsEyndh34CwVCh2UokMmOD",
+      "content": {
+        "title": "Dark mode for the reading view",
+        "description": "The white page at night is brutal."
+      },
+      "author_name": null,
+      "state": "pending",
+      "created_at": "2026-09-11T07:18:14.187766",
+      "type": "comment",
+      "is_public": true,
+      "source": "api",
+      "author_type": "anonymous",
+      "vote_count": 1,
+      "comment_count": 2
+    },
+    {
+      "id": "0003BNsEyoGOfJuscIuVNe605gW",
+      "board_id": "0003BNsEyndh34CwVCh2UokMmOD",
+      "content": {
+        "title": "Export notes to Kindle",
+        "description": "A .txt would do."
+      },
+      "author_name": null,
+      "state": "pending",
+      "created_at": "2026-09-11T07:18:14.187702",
+      "type": "comment",
+      "is_public": true,
+      "source": "api",
+      "author_type": "anonymous",
+      "vote_count": 0,
+      "comment_count": 0
+    },
+    {
+      "id": "0003BNsEyoKfqXKudlbnxC2I3fq",
+      "board_id": "0003BNsEyndh34CwVCh2UokMmOD",
+      "content": {
+        "title": "Widget for the home screen",
+        "description": ""
+      },
+      "author_name": null,
+      "state": "pending",
+      "created_at": "2026-09-11T07:18:14.185656",
+      "type": "comment",
+      "is_public": true,
+      "source": "api",
+      "author_type": "anonymous",
+      "vote_count": 0,
+      "comment_count": 0
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "page_size": 20,
+    "total_items": 3,
+    "total_pages": 1,
+    "has_next": false,
+    "has_previous": false,
+    "next_cursor": "0003BNsEyoKfqXKudlbnxC2I3fq"
+  },
+  "statuses": [
+    {
+      "slug": "pending",
+      "label": "Pending",
+      "color_token": "slate",
+      "icon_type": "circle-dot",
+      "category": "open",
+      "position": 0
+    },
+    {
+      "slug": "planned",
+      "label": "Planned",
+      "color_token": "blue",
+      "icon_type": "circle-dot",
+      "category": "open",
+      "position": 1
+    },
+    {
+      "slug": "in_review",
+      "label": "In review",
+      "color_token": "cyan",
+      "icon_type": "circle-dot",
+      "category": "open",
+      "position": 2
+    },
+    {
+      "slug": "in_progress",
+      "label": "In progress",
+      "color_token": "amber",
+      "icon_type": "circle-dot",
+      "category": "progress",
+      "position": 3
+    },
+    {
+      "slug": "completed",
+      "label": "Completed",
+      "color_token": "emerald",
+      "icon_type": "circle-check",
+      "category": "closed",
+      "position": 4
+    }
+  ]
+}
