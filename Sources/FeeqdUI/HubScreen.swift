@@ -26,13 +26,23 @@ final class HubModel: ObservableObject {
         roadmap = RoadmapStore(client: context.client)
         preferredBoardID = context.preferredBoardID
         showsChatButton = context.showsChatButton
+        // The config read at launch: the tabs are there from the first frame, not after a request.
+        if let cached = client.lastConfig {
+            let cachedPlan = HubPlan.make(config: cached, preferredBoardID: preferredBoardID)
+            if !cachedPlan.sections.isEmpty {
+                config = cached
+                plan = cachedPlan
+                phase = .loaded
+            }
+        }
     }
 
     func load() async {
         do {
             let resolved = try await client.config()
             config = resolved
-            plan = HubPlan.make(config: resolved, preferredBoardID: preferredBoardID)
+            let fresh = HubPlan.make(config: resolved, preferredBoardID: preferredBoardID)
+            if fresh != plan { plan = fresh }
             guard !plan.sections.isEmpty else { throw FeeqdError.noBoard }
             phase = .loaded
             if plan.sections.contains(where: { $0.kind == .roadmap }) {
@@ -75,20 +85,28 @@ final class HubModel: ObservableObject {
 /// The in-app hub: requests, bugs, roadmap and chat, laid out the way the admin chose in the
 /// dashboard. With nothing chosen it is what FeeqdKit always was — one board, chat on top.
 ///
-/// It carries its own `NavigationStack`, so the host presents it however it likes.
+/// It carries its own `NavigationStack`, so the host presents it however it likes; or, with
+/// `ownsNavigation` false, it is one more screen of the host's stack, pushed onto it.
 package struct HubScreen: View {
     private let context: FeeqdContext
+    private let ownsNavigation: Bool
     @StateObject private var model: HubModel
     @State private var selected: String?
     @State private var showingSubmit = false
     @State private var showingChat = false
+    /// The front page's section open. A state and a destination, not value links: those, pushed
+    /// onto the host's stack, went back to the list instead of opening.
+    @State private var openedSection: HubSection?
+    /// What is typed in each board's search, kept here because the search bar is the hub's.
+    @State private var searchTexts: [String: String] = [:]
     /// True when the host presented the screen (a sheet, a cover): then it needs its own way
     /// out, because not everyone knows a sheet closes with a swipe.
     @Environment(\.isPresented) private var isPresented
     @Environment(\.dismiss) private var dismiss
 
-    package init(context: FeeqdContext) {
+    package init(context: FeeqdContext, ownsNavigation: Bool = true) {
         self.context = context
+        self.ownsNavigation = ownsNavigation
         _model = StateObject(wrappedValue: HubModel(context: context))
     }
 
@@ -101,26 +119,12 @@ package struct HubScreen: View {
     }
 
     package var body: some View {
-        NavigationStack {
-            root
-                .navigationDestination(for: Entry.self) { entry in
-                    EntryDetailScreen(entryID: entry.id, store: model.store(for: entry.boardID), seed: entry)
-                }
-                .navigationDestination(for: HubSection.self) { section in
-                    sectionScreen(section, fromHome: true)
-                }
-                .navigationDestination(isPresented: $showingChat) {
-                    ChatScreen(client: context.client)
-                }
-                .onChange(of: showingChat) { showing in
-                    // Back from the chat: whatever was unread has just been read.
-                    if !showing {
-                        Task {
-                            await model.refreshConfig()
-                            await model.refreshChat()
-                        }
-                    }
-                }
+        Group {
+            if ownsNavigation {
+                NavigationStack { navigable }
+            } else {
+                navigable
+            }
         }
         .tint(theme.primary)
         .feeqdFontDesign(theme.fontDesign)
@@ -138,6 +142,39 @@ package struct HubScreen: View {
         }
     }
 
+    /// The root and where it leads. Each destination gets the theme and texts itself: pushed onto
+    /// the host's stack, it may take its environment from the stack rather than from here.
+    private var navigable: some View {
+        root
+            .navigationDestination(
+                isPresented: Binding(get: { openedSection != nil }, set: { if !$0 { openedSection = nil } })
+            ) {
+                if let openedSection {
+                    styled(sectionScreen(openedSection, fromHome: true))
+                }
+            }
+            .navigationDestination(isPresented: $showingChat) {
+                styled(ChatScreen(client: context.client))
+            }
+            .onChange(of: showingChat) { showing in
+                // Back from the chat: whatever was unread has just been read.
+                if !showing {
+                    Task {
+                        await model.refreshConfig()
+                        await model.refreshChat()
+                    }
+                }
+            }
+    }
+
+    private func styled(_ screen: some View) -> some View {
+        screen
+            .tint(theme.primary)
+            .feeqdFontDesign(theme.fontDesign)
+            .environment(\.feeqdStrings, strings)
+            .environment(\.feeqdTheme, theme)
+    }
+
     @ViewBuilder
     private var root: some View {
         switch model.phase {
@@ -150,7 +187,9 @@ package struct HubScreen: View {
                 .toolbar { closeItem }
         case .loaded:
             if plan.style == .home {
-                HomeScreen(plan: plan, chat: model.chat, label: label(for:)) { showingChat = true }
+                HomeScreen(plan: plan, chat: model.chat, label: label(for:), openSection: { openedSection = $0 }) {
+                    showingChat = true
+                }
                     .navigationTitle(plan.title)
                     .feeqdInlineTitle()
                     .toolbar { closeItem }
@@ -197,7 +236,8 @@ package struct HubScreen: View {
     private func sectionContent(_ section: HubSection) -> some View {
         switch section.kind {
         case let .board(id, _):
-            BoardListView(store: model.store(for: id), reservesChatRoom: model.chat.available)
+            let searchText = Binding(get: { searchTexts[id, default: ""] }, set: { searchTexts[id] = $0 })
+            BoardListView(store: model.store(for: id), searchText: searchText, reservesChatRoom: model.chat.available)
                 .id(id)
                 .safeAreaInset(edge: .top, spacing: 0) {
                     if model.config.behaviour.submitEnabled && !model.config.acceptingEntries {
@@ -211,8 +251,15 @@ package struct HubScreen: View {
                             .background(.bar)
                     }
                 }
+                // Outside the `.id`: inside it, every board switch installed a new search bar,
+                // and the navigation bar redrew the section switcher from nothing, its labels
+                // piled on top of each other for a moment.
+                // A section switcher in the bar leaves no room for a search button beside it.
+                .feeqdSearchable(text: searchText, prompt: strings(.searchPrompt), asButton: plan.style != .bar)
         case .roadmap:
-            RoadmapView(store: model.roadmap, showVotes: plan.showVotes) { await model.reloadRoadmap() }
+            RoadmapView(store: model.roadmap, showVotes: plan.showVotes, boardStore: model.store(for:)) {
+                await model.reloadRoadmap()
+            }
         }
     }
 
@@ -284,7 +331,8 @@ package struct HubScreen: View {
 
     @ToolbarContentBuilder
     private var closeItem: some ToolbarContent {
-        if isPresented {
+        // Pushed onto the host's stack, the way out is its back button.
+        if ownsNavigation && isPresented {
             ToolbarItem(placement: .feeqdLeading) {
                 Button {
                     dismiss()
@@ -329,16 +377,19 @@ package struct HubScreen: View {
 /// navigation the hub now owns.
 struct BoardListView: View {
     @ObservedObject var store: BoardStore
+    /// The search bar itself is the hub's (`HubScreen.sectionContent`); the list runs the search.
+    @Binding var searchText: String
     let reservesChatRoom: Bool
     @State private var tab: SDKConfig.Tab = .open
-    @State private var searchText = ""
+    /// The request open in the detail. A button and this, not a `NavigationLink` row: pushed onto
+    /// the host's stack, a link row stays highlighted after coming back.
+    @State private var opened: Entry?
 
     @Environment(\.feeqdStrings) private var strings
     @Environment(\.feeqdTheme) private var theme
 
     var body: some View {
         content
-            .searchable(text: $searchText, prompt: strings(.searchPrompt))
             .task { if store.needsLoad { await store.load() } }
             .task(id: searchText) {
                 guard !searchText.isEmpty || !store.query.isEmpty else { return }
@@ -379,50 +430,66 @@ struct BoardListView: View {
 
     private var showsTabs: Bool { store.visibleTabs.count > 1 && store.query.isEmpty }
 
+    private var tabPicker: some View {
+        Picker("", selection: $tab) {
+            ForEach(store.visibleTabs, id: \.self) { option in
+                let total = store.count(in: option)
+                Text("\(tabLabel(option)) (\(total.count)\(total.isComplete ? "" : "+"))").tag(option)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    private func tabLabel(_ tab: SDKConfig.Tab) -> String {
+        switch tab {
+        case .open: return strings(.tabOpen)
+        case .done: return strings(.tabDone)
+        case .mine: return strings(.tabMine)
+        }
+    }
+
     private var list: some View {
         let rows = showsTabs ? store.entries(in: tab) : store.entries
         return List {
-            if showsTabs {
-                // Open / Done as two small chips with their counts, not a second full-width
-                // segmented control under the section switcher.
-                HStack(spacing: 8) {
-                    ForEach(store.visibleTabs, id: \.self) { option in
-                        let on = option == tab
-                        Button {
-                            tab = option
-                        } label: {
-                            HStack(spacing: 4) {
-                                Text(option == .done ? strings(.tabDone) : option == .mine ? strings(.tabMine) : strings(.tabOpen))
-                                Text("\(store.entries(in: option).count)")
-                                    .foregroundStyle(on ? Color.white.opacity(0.8) : Color.secondary)
-                            }
-                            .font(.subheadline.weight(.medium))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .foregroundStyle(on ? Color.white : Color.primary)
-                            .background(Capsule().fill(on ? theme.primary : Color.secondary.opacity(0.12)))
-                        }
-                        .buttonStyle(.borderless)
-                        .accessibilityAddTraits(on ? .isSelected : [])
-                    }
-                    Spacer()
-                }
-                .listRowSeparator(.hidden)
-            }
+            // The rows sit in one card, the way iOS groups a list; the chips above it and the
+            // footer below stay on the background.
+            Section {
             ForEach(rows) { entry in
-                NavigationLink(value: entry) {
-                    EntryRow(
-                        entry: entry,
-                        status: store.status(for: entry.state),
-                        voted: store.votedIDs.contains(entry.id),
-                        behaviour: store.config.behaviour
-                    ) {
-                        Task { await store.toggleVote(entryID: entry.id) }
+                Button {
+                    opened = entry
+                } label: {
+                    HStack(spacing: 8) {
+                        EntryRow(
+                            entry: entry,
+                            status: store.status(for: entry.state),
+                            voted: store.votedIDs.contains(entry.id),
+                            behaviour: store.config.behaviour
+                        ) {
+                            Task { await store.toggleVote(entryID: entry.id) }
+                        }
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
                     }
+                    .contentShape(Rectangle())
                 }
-                .task { await store.loadMoreIfNeeded(current: entry) }
+                .buttonStyle(.plain)
+                // The separator starts at the vote tile, the row's left edge.
+                .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                .task { await store.loadMoreIfNeeded(current: entry, in: showsTabs ? tab : nil) }
             }
-            if rows.isEmpty {
+            if rows.isEmpty, store.hasMore, showsTabs, tab != .mine {
+                // Nothing of this tab in what is loaded yet, but the board goes on: fetch on.
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+                    .listRowSeparator(.hidden)
+                    .task(id: store.entries.count) { await store.loadMore() }
+            } else if rows.isEmpty {
                 Text(store.query.isEmpty ? strings(.tabEmpty) : strings(.searchEmpty))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -433,16 +500,34 @@ struct BoardListView: View {
             if store.isLoadingMore {
                 ProgressView().frame(maxWidth: .infinity).listRowSeparator(.hidden)
             }
-            if store.config.behaviour.poweredByFeeqd {
-                PoweredByFeeqd().listRowSeparator(.hidden)
-            }
-            if reservesChatRoom {
-                // Room under the last row, so the floating chat button never covers it.
-                Color.clear.frame(height: 64).listRowSeparator(.hidden)
+            } footer: {
+                VStack(spacing: 0) {
+                    if store.config.behaviour.poweredByFeeqd {
+                        PoweredByFeeqd()
+                    }
+                    if reservesChatRoom {
+                        // Room under the last row, so the floating chat button never covers it.
+                        Color.clear.frame(height: 64)
+                    }
+                }
+                .frame(maxWidth: .infinity)
             }
         }
-        .listStyle(.plain)
+        .feeqdCardList()
+        .safeAreaInset(edge: .top, spacing: 0) {
+            // Open / Closed across the width, pinned under the title: what a list of requests
+            // in an iOS app usually opens with.
+            if showsTabs { tabPicker }
+        }
         .refreshable { await store.load() }
+        .navigationDestination(isPresented: Binding(get: { opened != nil }, set: { if !$0 { opened = nil } })) {
+            if let opened {
+                EntryDetailScreen(entryID: opened.id, store: store, seed: opened)
+                    .environment(\.feeqdStrings, strings)
+                    .environment(\.feeqdTheme, theme)
+                    .tint(theme.primary)
+            }
+        }
     }
 }
 
@@ -453,6 +538,7 @@ struct HomeScreen: View {
     let plan: HubPlan
     let chat: ChatStatus
     let label: (HubSection) -> String
+    let openSection: (HubSection) -> Void
     let openChat: () -> Void
 
     @Environment(\.feeqdStrings) private var strings
@@ -486,7 +572,9 @@ struct HomeScreen: View {
                 }
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
                     ForEach(plan.sections) { section in
-                        NavigationLink(value: section) {
+                        Button {
+                            openSection(section)
+                        } label: {
                             VStack(alignment: .leading, spacing: 12) {
                                 Image(systemName: icon(for: section))
                                     .font(.headline)
@@ -530,8 +618,13 @@ struct HomeScreen: View {
 struct RoadmapView: View {
     @ObservedObject var store: RoadmapStore
     let showVotes: Bool
+    /// The board's store, for the request a card opens.
+    let boardStore: (String) -> BoardStore
     let reload: () async -> Void
     @State private var selected = 0
+    /// The card open in the detail. A button and this, like the board's rows: a value link pushed
+    /// onto the host's stack went back to the list instead of opening the request.
+    @State private var opened: Entry?
 
     @Environment(\.feeqdStrings) private var strings
     @Environment(\.feeqdTheme) private var theme
@@ -546,6 +639,14 @@ struct RoadmapView: View {
             VStack(spacing: 0) {
                 pills
                 pages
+            }
+            .navigationDestination(isPresented: Binding(get: { opened != nil }, set: { if !$0 { opened = nil } })) {
+                if let opened {
+                    EntryDetailScreen(entryID: opened.id, store: boardStore(opened.boardID), seed: opened)
+                        .environment(\.feeqdStrings, strings)
+                        .environment(\.feeqdTheme, theme)
+                        .tint(theme.primary)
+                }
             }
         }
     }
@@ -594,7 +695,9 @@ struct RoadmapView: View {
                         .padding(.top, 40)
                 }
                 ForEach(items) { item in
-                    NavigationLink(value: item.entry) {
+                    Button {
+                        opened = item.entry
+                    } label: {
                         card(item)
                     }
                     .buttonStyle(.plain)
@@ -619,18 +722,35 @@ struct RoadmapView: View {
             }
             Spacer(minLength: 0)
             if showVotes {
-                VStack(spacing: 1) {
-                    Image(systemName: "arrowtriangle.up.fill").font(.caption2)
-                    Text("\(item.entry.voteCount)").font(.caption.weight(.semibold)).monospacedDigit()
-                }
-                .frame(width: 40, height: 44)
-                .foregroundStyle(theme.textSecondary)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.secondary.opacity(0.1)))
-                .accessibilityLabel("\(item.entry.voteCount) \(strings(.voteUpvote))")
+                RoadmapVote(entry: item.entry, store: boardStore(item.entry.boardID))
             }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: theme.cornerRadius + 4, style: .continuous).fill(theme.surface))
+    }
+}
+
+/// A roadmap card's vote: the same control as the list's, on the card's board. It looks like a
+/// button, so it is one.
+private struct RoadmapVote: View {
+    let entry: Entry
+    @ObservedObject var store: BoardStore
+
+    var body: some View {
+        let current = store.entry(id: entry.id) ?? entry
+        VoteButton(
+            count: current.voteCount,
+            voted: store.votedIDs.contains(entry.id),
+            showsCount: true,
+            size: 44
+        ) {
+            Task { await store.toggleVote(entryID: entry.id) }
+        }
+        .task {
+            store.open(entry)
+            // Which cards this device already backed comes with the board's first load.
+            if store.needsLoad { await store.load() }
+        }
     }
 }

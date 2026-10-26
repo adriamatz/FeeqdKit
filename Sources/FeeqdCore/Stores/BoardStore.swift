@@ -18,6 +18,9 @@ package final class BoardStore: ObservableObject {
     /// What this device sent, public or not: the "Mine" tab, and the source of the requests
     /// only their author sees, which the list shows on top.
     @Published package private(set) var mine: [Entry] = []
+    /// Requests opened from outside the list (a roadmap card) that its loaded pages don't hold:
+    /// their detail still reads, votes and counts like any other.
+    @Published package private(set) var opened: [String: Entry] = [:]
     @Published package private(set) var isLoadingMore = false
     @Published package private(set) var query = ""
     /// A failed vote, comment or page: shown once, never replacing content already on screen.
@@ -30,7 +33,9 @@ package final class BoardStore: ObservableObject {
     private var pagination: Pagination?
     private var votesInFlight: Set<String> = []
 
-    package init(client: FeeqdClient, preferredBoardID: String? = nil, initialConfig: SDKConfig = .fallback, pageSize: Int = 20) {
+    /// Pages are as big as the reader serves (200): the Open / Done tabs split what is loaded, so
+    /// one page holding the whole board is what makes their counts exact on almost every app.
+    package init(client: FeeqdClient, preferredBoardID: String? = nil, initialConfig: SDKConfig = .fallback, pageSize: Int = 200) {
         self.client = client
         self.preferredBoardID = preferredBoardID
         // Known before the first load: a detail opened from elsewhere (the roadmap) needs it.
@@ -60,7 +65,20 @@ package final class BoardStore: ObservableObject {
     }
 
     package func entry(id: String) -> Entry? {
-        entries.first { $0.id == id }
+        entries.first { $0.id == id } ?? opened[id]
+    }
+
+    /// Keeps a request opened from elsewhere, so its detail can vote before, or without, the
+    /// board's list loading.
+    package func open(_ entry: Entry) {
+        guard !entries.contains(where: { $0.id == entry.id }), opened[entry.id] == nil else { return }
+        opened[entry.id] = entry
+    }
+
+    /// How many requests a tab holds, and whether that is all of them: past the first page the
+    /// rest of the board is not loaded yet, so the count is a floor ("200+").
+    package func count(in tab: SDKConfig.Tab) -> (count: Int, isComplete: Bool) {
+        (entries(in: tab).count, tab == .mine || !hasMore)
     }
 
     /// There is no status filter on the list endpoint yet (spec H5), so tabs filter what is loaded.
@@ -117,6 +135,7 @@ package final class BoardStore: ObservableObject {
                 if let fetched = await votes { votedIDs = fetched }
             }
             phase = .loaded
+            await loadRest()
         } catch {
             if FeeqdError.isCancellation(error) {
                 // Back to where the screen loads again when it returns.
@@ -133,8 +152,32 @@ package final class BoardStore: ObservableObject {
         }
     }
 
-    package func loadMoreIfNeeded(current entry: Entry) async {
-        guard entry.id == entries.last?.id, hasMore, !isLoadingMore, let board = boardID else { return }
+    /// Loads the next page when `entry` is the last row the screen shows. That is the last row of
+    /// the TAB, not of everything loaded: in Open, the board's last loaded row may be a Done one
+    /// that never appears, and the next page would never come.
+    package func loadMoreIfNeeded(current entry: Entry, in tab: SDKConfig.Tab? = nil) async {
+        guard tab != .mine, entry.id == entries(in: tab).last?.id else { return }
+        await loadMore()
+    }
+
+    /// Boards up to this size are loaded whole, so the Open / Done counts are exact.
+    private static let wholeBoardLimit = 1_000
+
+    /// After the first page is on screen, the rest of the board, page by page, while it stays
+    /// small enough to hold. A failed page stops quietly: scrolling still loads it later.
+    private func loadRest() async {
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+        while hasMore, query.isEmpty, entries.count < Self.wholeBoardLimit, let board = boardID, !Task.isCancelled {
+            guard let next = try? await fetchPage(board: board, page: (pagination?.page ?? 1) + 1) else { return }
+            apply(next, replacing: false)
+        }
+    }
+
+    /// The next page, whatever is on screen: a tab with no rows loaded yet has no last row to
+    /// trigger `loadMoreIfNeeded`.
+    package func loadMore() async {
+        guard hasMore, !isLoadingMore, let board = boardID else { return }
         isLoadingMore = true
         defer { isLoadingMore = false }
         do {
@@ -164,7 +207,7 @@ package final class BoardStore: ObservableObject {
     /// On failure it is reverted. Retrying is safe — the backend only moves the count when the
     /// vote ledger changed.
     package func toggleVote(entryID: String) async {
-        guard let board = boardID, let entry = entries.first(where: { $0.id == entryID }), !entry.onlyYou,
+        guard let board = boardID, let entry = entry(id: entryID), !entry.onlyYou,
               !votesInFlight.contains(entryID) else { return }
         let wasVoted = votedIDs.contains(entryID)
         if wasVoted && !config.behaviour.allowVoteUndo { return }
@@ -177,6 +220,7 @@ package final class BoardStore: ObservableObject {
                 ? try await client.retractVote(boardID: board, entryID: entryID)
                 : try await client.vote(boardID: board, entryID: entryID)
             if let index = entries.firstIndex(where: { $0.id == entryID }) { entries[index].voteCount = result.voteCount }
+            opened[entryID]?.voteCount = result.voteCount
             if result.voted { votedIDs.insert(entryID) } else { votedIDs.remove(entryID) }
         } catch {
             setVote(entryID, voted: wasVoted, delta: wasVoted ? 1 : -1)
@@ -238,6 +282,7 @@ package final class BoardStore: ObservableObject {
         if let index = entries.firstIndex(where: { $0.id == entryID }) {
             entries[index].voteCount = max(0, entries[index].voteCount + delta)
         }
+        if let count = opened[entryID]?.voteCount { opened[entryID]?.voteCount = max(0, count + delta) }
         if voted { votedIDs.insert(entryID) } else { votedIDs.remove(entryID) }
     }
 }

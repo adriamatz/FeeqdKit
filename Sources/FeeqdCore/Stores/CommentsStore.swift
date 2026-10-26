@@ -18,6 +18,9 @@ package final class CommentsStore: ObservableObject {
     @Published package private(set) var phase: Phase = .loading
     @Published package private(set) var comments: [Comment] = []
     @Published package private(set) var isSending = false
+    /// Whether the thread takes comments. A request in review on a backend that cannot show its
+    /// author the thread does not: writing there would go nowhere anyone reads.
+    @Published package private(set) var isOpen = true
     @Published package var lastError: FeeqdError?
 
     private let client: FeeqdClient
@@ -40,12 +43,23 @@ package final class CommentsStore: ObservableObject {
         }
     }
 
-    package func load() async {
+    /// `ownInReview` is a request this device sent that the public cannot see yet: its thread is
+    /// the author's and the team's, read through the author's own route.
+    package func load(ownInReview: Bool = false) async {
         do {
-            comments = try await client.comments(boardID: boardID, entryID: entryID, page: 1, pageSize: 100).items
+            comments = try await ownInReview
+                ? client.myComments(boardID: boardID, entryID: entryID, page: 1, pageSize: 100).items
+                : client.comments(boardID: boardID, entryID: entryID, page: 1, pageSize: 100).items
+            isOpen = true
             phase = .loaded
         } catch {
             if FeeqdError.isCancellation(error) { return }
+            if ownInReview, (error as? FeeqdError)?.isMissingRoute == true {
+                comments = []
+                isOpen = false
+                phase = .loaded
+                return
+            }
             let wrapped = FeeqdError.wrap(error)
             if comments.isEmpty {
                 phase = .failed(wrapped)

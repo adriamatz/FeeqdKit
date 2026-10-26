@@ -1,7 +1,8 @@
 import Foundation
+import os
 
 package enum FeeqdCoreVersion {
-    package static let current = "0.1.0"
+    package static let current = "0.2.0"
 }
 
 package struct ClientConfiguration: Sendable {
@@ -58,6 +59,11 @@ package actor FeeqdClient {
     /// is dropped, so it can't put the previous user's payment back.
     package private(set) var paymentGeneration = 0
     private var cachedConfig: (etag: String, config: SDKConfig)?
+    private nonisolated let lastConfigLock = OSAllocatedUnfairLock<SDKConfig?>(initialState: nil)
+
+    /// The last config this client read, without waiting on the actor: a screen opens with it at
+    /// once and revalidates (`configure` already read it at launch).
+    package nonisolated var lastConfig: SDKConfig? { lastConfigLock.withLock { $0 } }
     /// Set by a `429 quota_exceeded`: the plan is full even if the config cached here still
     /// says otherwise. A fresh config from the server (a `200`) is the truth again.
     private var entriesFull = false
@@ -116,13 +122,18 @@ package actor FeeqdClient {
         var headers: [String: String] = [:]
         if let cachedConfig { headers["If-None-Match"] = cachedConfig.etag }
         let (data, response) = try await send("GET", .reader, "/sdk/config", credential: .key, headers: headers, acceptNotModified: true)
-        if response.statusCode == 304, let cachedConfig { return applyingLocalQuota(cachedConfig.config) }
+        if response.statusCode == 304, let cachedConfig {
+            let config = applyingLocalQuota(cachedConfig.config)
+            lastConfigLock.withLock { $0 = config }
+            return config
+        }
         let config = try decode(SDKConfig.self, data)
         if let etag = response.value(forHTTPHeaderField: "ETag") {
             cachedConfig = (etag, config)
         }
         entriesFull = false
         conversationsFull = false
+        lastConfigLock.withLock { $0 = config }
         return config
     }
 
@@ -174,6 +185,17 @@ package actor FeeqdClient {
         return try decode(Page<Comment>.self, data)
     }
 
+    /// The comments on a request this device sent, read as its author: the team's replies while
+    /// the request is still in review, when the public route answers 404 for it. A backend from
+    /// before this route answers a bare 404 too (`isMissingRoute`).
+    package func myComments(boardID: String, entryID: String, page: Int, pageSize: Int) async throws -> Page<Comment> {
+        let query = [URLQueryItem(name: "page", value: String(page)), URLQueryItem(name: "page_size", value: String(pageSize))]
+        let (data, _) = try await send(
+            "GET", .reader, "/sdk/boards/\(boardID)/mine/\(entryID)/comments", query: query, credential: .keyAndDevice
+        )
+        return try decode(Page<Comment>.self, data)
+    }
+
     package func similar(boardID: String, title: String) async throws -> [SimilarEntry] {
         let (data, _) = try await send(
             "GET", .reader, "/public/feedback/\(boardID)/similar", query: [URLQueryItem(name: "title", value: title)]
@@ -191,6 +213,16 @@ package actor FeeqdClient {
         }
         let (data, _) = try await send("GET", .gatherer, "/sdk/boards/\(boardID)/my-votes", credential: .keyAndDevice, headers: headers)
         return Set(try decode(MyVotes.self, data).entryIDs)
+    }
+
+    /// Sent once by `configure`: the app launched. Without it the dashboard would only see the
+    /// app once someone opens a Feeqd screen, and "run the app once" would not connect it. The
+    /// config it reads is the one the first screen needs anyway (cached, then a `304`). Quiet on
+    /// failure: the next screen load registers the device just the same.
+    package func announceLaunch(preferredBoardID: String?) async {
+        guard let config = try? await config(),
+              let board = preferredBoardID ?? config.boardID ?? config.boards.first?.id else { return }
+        _ = try? await myVotes(boardID: board)
     }
 
     // MARK: Writes

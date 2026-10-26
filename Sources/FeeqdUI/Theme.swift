@@ -210,6 +210,39 @@ extension View {
         self
         #endif
     }
+
+    /// The search out of the way: browsing is what the screen is for. On iOS 26 a button in the
+    /// bar, when the bar has room for it; otherwise a field that hides once the list scrolls.
+    @ViewBuilder
+    func feeqdSearchable(text: Binding<String>, prompt: String, asButton: Bool) -> some View {
+        #if os(iOS)
+        if #available(iOS 26, *), asButton {
+            // A magnifier in the bar that opens the field.
+            searchable(text: text, prompt: prompt).searchToolbarBehavior(.minimize)
+        } else {
+            searchable(text: text, placement: .navigationBarDrawer(displayMode: .automatic), prompt: prompt)
+        }
+        #else
+        searchable(text: text, prompt: prompt)
+        #endif
+    }
+
+    /// Rows in one rounded card on the grouped background (iOS); a plain list elsewhere.
+    @ViewBuilder
+    func feeqdCardList() -> some View {
+        #if os(iOS)
+        if #available(iOS 17, *) {
+            // The grouped style's own top margin is a whole empty band under the switcher.
+            listStyle(.insetGrouped)
+                .contentMargins(.top, 4, for: .scrollContent)
+                .listSectionSpacing(.compact)
+        } else {
+            listStyle(.insetGrouped)
+        }
+        #else
+        listStyle(.plain)
+        #endif
+    }
 }
 
 /// The message for an error, in the user's words.

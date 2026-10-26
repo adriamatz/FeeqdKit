@@ -135,6 +135,45 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(store.entries(in: .done).count, 0)
     }
 
+    func testTheRestOfTheBoardLoadsAfterTheFirstPage() async throws {
+        let config = try Fixture.data("sdk_config")
+        func page(_ number: Int, state: String, hasNext: Bool) -> Data {
+            Data("""
+            {"items": [{"id": "e\(number)", "board_id": "b", "content": {"title": "Entry \(number)"}, "state": "\(state)",
+              "created_at": "2026-09-29T10:00:00", "vote_count": \(10 - number), "comment_count": 0}],
+             "pagination": {"page": \(number), "page_size": 1, "total_items": 2, "total_pages": 2, "has_next": \(hasNext)}}
+            """.utf8)
+        }
+        StubURLProtocol.responder = { request in
+            let url = request.url
+            let path = url?.path ?? ""
+            if path == "/sdk/config" { return .json(200, config) }
+            if path.hasPrefix("/public/feedback/") {
+                let second = url?.query?.contains("page=2") == true
+                return .json(200, second ? page(2, state: "planned", hasNext: false) : page(1, state: "completed", hasNext: true))
+            }
+            return .init(status: 404)
+        }
+        let store = BoardStore(client: .stubbed(), pageSize: 1)
+        // The first page is all Done; the rest of the board comes in after it, so Open is not
+        // left empty and its count is the board's.
+        await store.load()
+        XCTAssertEqual(store.entries(in: .open).map(\.id), ["e2"])
+        XCTAssertEqual(store.count(in: .open).count, 1)
+        XCTAssertTrue(store.count(in: .open).isComplete)
+    }
+
+    func testLoadMoreFollowsTheLastRowOfTheTab() async throws {
+        try routeCapturedResponses()
+        let store = BoardStore(client: .stubbed())
+        await store.load()
+        let lastOpen = try XCTUnwrap(store.entries(in: .open).last)
+        // Nothing more to load in the fixture: the call is a no-op rather than a request.
+        let before = StubURLProtocol.requests.count
+        await store.loadMoreIfNeeded(current: lastOpen, in: .open)
+        XCTAssertEqual(StubURLProtocol.requests.count, before)
+    }
+
     func testCommentsBuildOneLevelThreads() async throws {
         let body = try Fixture.data("comments_page")
         StubURLProtocol.responder = { _ in .json(200, body) }

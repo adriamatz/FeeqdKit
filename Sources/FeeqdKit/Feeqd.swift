@@ -72,6 +72,7 @@ public enum Feeqd {
             showsChatButton: configuration.showsChatButton
         )
         state.withLock { $0 = context }
+        Task { await client.announceLaunch(preferredBoardID: configuration.boardID) }
         if configuration.collectPurchases { PurchaseWatcher.start(client: client) }
     }
 
@@ -129,13 +130,20 @@ public enum Feeqd {
     }
 
     /// The private chat with your team on its own, for when you want it somewhere other than
-    /// the board. It brings its own navigation; check `chatStatus()` before offering it.
+    /// the board. Check `chatStatus()` before offering it. Presented, it brings its own
+    /// navigation; pushed onto yours, pass `pushed: true`.
     public struct ChatView: View {
-        public init() {}
+        private let pushed: Bool
+
+        /// - Parameter pushed: `true` when you push it onto your own `NavigationStack` (a
+        ///   `NavigationLink` in your settings) instead of presenting it.
+        public init(pushed: Bool = false) {
+            self.pushed = pushed
+        }
 
         public var body: some View {
             if let context = Feeqd.context {
-                FreshAfterReset { StandaloneChatScreen(context: context) }
+                FreshAfterReset { StandaloneChatScreen(context: context, ownsNavigation: !pushed) }
             } else {
                 NotConfiguredView()
             }
@@ -143,14 +151,21 @@ public enum Feeqd {
     }
 
     /// The feedback screen: requests, votes, comments and new requests — and, when your key
-    /// carries it, a button to message the team. Present it however you like; it brings its
-    /// own navigation.
+    /// carries it, a button to message the team. Present it (a sheet, a cover) and it brings
+    /// its own navigation and a close button; push it onto yours with `pushed: true` and it is
+    /// one more screen of your app, with your back button.
     public struct FeedbackView: View {
-        public init() {}
+        private let pushed: Bool
+
+        /// - Parameter pushed: `true` when you push it onto your own `NavigationStack` (a
+        ///   `NavigationLink` in your settings) instead of presenting it.
+        public init(pushed: Bool = false) {
+            self.pushed = pushed
+        }
 
         public var body: some View {
             if let context = Feeqd.context {
-                FreshAfterReset { HubScreen(context: context) }
+                FreshAfterReset { HubScreen(context: context, ownsNavigation: !pushed) }
             } else {
                 NotConfiguredView()
             }

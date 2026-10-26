@@ -20,7 +20,6 @@ package enum StringKey: String, CaseIterable, Sendable {
     case anonymousAuthor = "entry.anonymousAuthor"
     case commentsTitle = "comments.title"
     case commentsEmpty = "comments.empty"
-    case entryOnlyYou = "entry.only_you"
     case entryOnlyYouHint = "entry.only_you_hint"
     case tabMine = "tab.mine"
     case commentPlaceholder = "comment.placeholder"
@@ -137,8 +136,7 @@ package struct StringTable: Sendable {
             "entry.anonymousAuthor": "Anonymous",
             "comments.title": "Comments",
             "comments.empty": "No comments yet.",
-            "entry.only_you": "Only you can see this",
-            "entry.only_you_hint": "The team will look at it first. Once they do, everyone can see it, vote and comment.",
+            "entry.only_you_hint": "Only you and the team see this for now.",
             "tab.mine": "Mine",
             "comment.placeholder": "Add a comment",
             "comment.replyPlaceholder": "Write a reply",
@@ -173,7 +171,7 @@ package struct StringTable: Sendable {
             "chat.quotaExceeded": "The team can't take new conversations right now. Try again later.",
             "chat.tooLong": "That message is too long.",
             "chat.unread": "New reply",
-            "hub.requests": "Requests",
+            "hub.requests": "Feature Requests",
             "hub.bugs": "Bugs",
             "hub.roadmap": "Roadmap",
             "home.title": "How can we help?",
@@ -207,8 +205,7 @@ package struct StringTable: Sendable {
             "entry.anonymousAuthor": "Anónimo",
             "comments.title": "Comentarios",
             "comments.empty": "Todavía no hay comentarios.",
-            "entry.only_you": "Solo lo ves tú",
-            "entry.only_you_hint": "El equipo lo revisará primero. Cuando lo haga, todos podrán verlo, votarlo y comentarlo.",
+            "entry.only_you_hint": "Por ahora solo lo veis tú y el equipo.",
             "tab.mine": "Mías",
             "comment.placeholder": "Añade un comentario",
             "comment.replyPlaceholder": "Escribe una respuesta",

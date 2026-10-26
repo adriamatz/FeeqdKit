@@ -2,7 +2,7 @@
 
 In-app feedback for iOS: requests with votes, comments, a way to ask for something new, and a private chat with your team, backed by [Feeqd](https://feeqd.com). SwiftUI, iOS 16+, no dependencies.
 
-> **0.1.0: first release.** Talks to production out of the box. You need a Feeqd plan that includes the iOS SDK, and the publishable key from **App & SDK** in the dashboard.
+> **0.2.0.** Talks to production out of the box. You need a Feeqd plan that includes the iOS SDK, and the publishable key from **App & SDK** in the dashboard.
 
 ## Installation
 
@@ -11,7 +11,7 @@ In Xcode: **File → Add Package Dependencies…** and paste `https://github.com
 Or in `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/adriamatz/FeeqdKit", from: "0.1.0")
+.package(url: "https://github.com/adriamatz/FeeqdKit", from: "0.2.0")
 ```
 
 and add `FeeqdKit` to your target's dependencies.
@@ -28,9 +28,23 @@ import FeeqdKit
 
 // anywhere
 .sheet(isPresented: $showFeedback) { Feeqd.FeedbackView() }
+
+// or as a row of your settings, pushed onto your NavigationStack
+NavigationLink("Send feedback") { Feeqd.FeedbackView(pushed: true) }
 ```
 
 That is the whole integration. Theme, copy, tabs, sort order and the "Powered by" badge come from the dashboard, with no App Store release.
+
+### With an AI assistant
+
+[`AGENTS.md`](AGENTS.md) has the complete public API, what belongs in code and what in the dashboard, and a recipe for each change: integrating, identifying users, signing out, offering the chat, matching your app's look, changing copy. Point your assistant at it:
+
+```text
+Add FeeqdKit to this app following https://github.com/adriamatz/FeeqdKit/blob/main/AGENTS.md.
+My key is feeqd_pk_…
+```
+
+The dashboard has these prompts ready to copy: in the onboarding (with your key already in them), in Getting started, and in **App & SDK**.
 
 ### What the screen shows
 
@@ -130,7 +144,7 @@ Cross-target APIs use the `package` access level, so the app integrating the SDK
 - **Device identity** is a KSUID in the Keychain (`AfterFirstUnlockThisDeviceOnly`, not synced), read once per process. It survives reinstalls. Restoring to a new phone without iCloud Keychain starts a new identity: the accepted cost of never asking for an email.
 - **Diagnostics** (`X-Feeqd-Device-Info`: model, OS, locale) ride only on something the user did: a vote, a comment, a request. The launch request carries only the app and SDK versions: the backend records a device once an hour from whichever request comes first, and without them the dashboard's version spread would stay empty.
 - **Votes are optimistic** and replaced by the server's count when it answers; reverted on failure. Retrying is safe: the backend only moves the count when the vote ledger changed.
-- **Launch registers the device.** The board asks for `my-votes` at launch, which is also how the dashboard's onboarding learns the app is connected.
+- **Launch registers the device.** `configure` sends one quiet request in the background (the config, then `my-votes` on the key's board), which is how the dashboard's onboarding learns the app is connected: running the app once is enough, no Feeqd screen has to open. A failure is silent; the first screen load registers it just the same.
 - **"Sent", never "published".** Submissions are accepted with `202 queued` and no id; the board may hold them for moderation. The list reloads shortly after.
 - **One conversation at a time.** The server keeps one open conversation per key and device; the chat shows it, or the latest closed one. Writing after the team closed it opens a new one. An unknown sender from the server reads as the team, never as the user.
 - **Loaded-and-empty is not failed.** An empty board invites the first request; a failed load shows an error and a retry, never an inviting empty screen.

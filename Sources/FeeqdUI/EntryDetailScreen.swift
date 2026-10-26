@@ -33,8 +33,11 @@ struct EntryDetailScreen: View {
         }
         .feeqdInlineTitle()
         .task {
-            // An only-you request has no public thread: loading it would only show an error.
-            if (store.entry(id: entryID) ?? seed)?.onlyYou != true { await comments.load() }
+            // Opened from the roadmap: the board may not be loaded, and votes need the request
+            // and which ones this device already backed.
+            if let seed { store.open(seed) }
+            if store.needsLoad { Task { await store.load() } }
+            await comments.load(ownInReview: (store.entry(id: entryID) ?? seed)?.onlyYou == true)
         }
         .alert(
             strings(.errorTitle),
@@ -59,15 +62,11 @@ struct EntryDetailScreen: View {
                             .font(.body)
                             .foregroundStyle(theme.textSecondary)
                     }
-                    if entry.onlyYou {
-                        OnlyYouBadge()
-                        Text(strings(.entryOnlyYouHint))
-                            .font(.footnote)
-                            .foregroundStyle(theme.textSecondary)
-                    } else {
-                        HStack {
-                            StatusBadge(status: store.status(for: entry.state), fallbackSlug: entry.state)
-                            Spacer()
+                    HStack {
+                        StatusBadge(status: store.status(for: entry.state), fallbackSlug: entry.state)
+                        Spacer()
+                        // Nobody else sees it yet, so nobody votes on it, the author included.
+                        if !entry.onlyYou {
                             VoteButton(
                                 count: entry.voteCount,
                                 voted: store.votedIDs.contains(entry.id),
@@ -81,9 +80,9 @@ struct EntryDetailScreen: View {
                 .padding(.vertical, 4)
             }
 
-            // Comments open once the request is public: until then there is nobody to talk to.
-            if !entry.onlyYou {
-                Section(strings(.commentsTitle)) {
+            // In review, the thread is the author's and the team's; the public joins once it is published.
+            if !entry.onlyYou || comments.isOpen {
+                Section {
                     switch comments.phase {
                     case .loading:
                         ProgressView().frame(maxWidth: .infinity)
@@ -105,11 +104,17 @@ struct EntryDetailScreen: View {
                             }
                         }
                     }
+                } header: {
+                    Text(strings(.commentsTitle))
+                } footer: {
+                    if entry.onlyYou {
+                        Text(strings(.entryOnlyYouHint))
+                    }
                 }
             }
         }
         .safeAreaInset(edge: .bottom) {
-            if !entry.onlyYou { composer }
+            if !entry.onlyYou || comments.isOpen { composer }
         }
     }
 

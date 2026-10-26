@@ -1,11 +1,13 @@
 import FeeqdCore
 import SwiftUI
 
-/// The vote control: 44pt, labelled for VoiceOver, and its own tap target inside a row.
+/// The vote control: a solid tile with the count, filled with the vote colour once voted, so
+/// what you backed reads at a glance down a list. Labelled for VoiceOver, its own tap target.
 struct VoteButton: View {
     let count: Int
     let voted: Bool
     let showsCount: Bool
+    var size: CGFloat = 48
     let action: () -> Void
 
     @Environment(\.feeqdStrings) private var strings
@@ -13,20 +15,20 @@ struct VoteButton: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 2) {
-                Image(systemName: voted ? "arrowtriangle.up.fill" : "arrowtriangle.up")
+            VStack(spacing: 3) {
+                Image(systemName: "arrowtriangle.up.fill")
                     .font(.footnote)
                 if showsCount {
                     Text("\(count)")
-                        .font(.footnote.weight(.semibold))
+                        .font(.subheadline.weight(.semibold))
                         .monospacedDigit()
                 }
             }
-            .frame(minWidth: 44, minHeight: 44)
-            .foregroundStyle(voted ? theme.voteActive : theme.textSecondary)
+            .frame(width: size, height: size)
+            .foregroundStyle(voted ? Color.white : theme.textPrimary)
             .background(
-                RoundedRectangle(cornerRadius: theme.cornerRadius * 0.66, style: .continuous)
-                    .fill(voted ? theme.voteActive.opacity(0.14) : theme.surface)
+                RoundedRectangle(cornerRadius: theme.cornerRadius * 0.75, style: .continuous)
+                    .fill(voted ? theme.voteActive : Color.secondary.opacity(0.2))
             )
         }
         // Borderless keeps the tap on the button instead of the row's navigation link.
@@ -46,26 +48,15 @@ struct StatusBadge: View {
 
     var body: some View {
         let color = theme.color(for: status, slug: fallbackSlug)
-        Text(status?.label ?? fallbackSlug.replacingOccurrences(of: "_", with: " ").capitalized)
-            .font(.caption.weight(.medium))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
+        Text((status?.label ?? fallbackSlug.replacingOccurrences(of: "_", with: " ")).uppercased())
+            .font(.caption2.weight(.semibold))
+            .tracking(0.4)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
             .foregroundStyle(color)
-            .background(Capsule().fill(color.opacity(0.14)))
-    }
-}
-
-/// On the author's own request that nobody else sees yet, in place of its status.
-struct OnlyYouBadge: View {
-    @Environment(\.feeqdStrings) private var strings
-
-    var body: some View {
-        Label(strings(.entryOnlyYou), systemImage: "eye.slash")
-            .font(.caption.weight(.medium))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .foregroundStyle(.secondary)
-            .background(Capsule().fill(Color.secondary.opacity(0.14)))
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(color.opacity(0.16)))
     }
 }
 
@@ -79,39 +70,42 @@ struct EntryRow: View {
     @Environment(\.feeqdStrings) private var strings
     @Environment(\.feeqdTheme) private var theme
 
+    /// Votes, then the title with where it stands beside it, then one line of what was asked.
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .center, spacing: 14) {
             VoteButton(count: entry.voteCount, voted: voted, showsCount: behaviour.showVoteCount, action: onVote)
                 // Nobody else sees it, so nobody can vote on it yet, the author included.
                 .disabled(entry.onlyYou)
-                .opacity(entry.onlyYou ? 0.4 : 1)
             VStack(alignment: .leading, spacing: 4) {
-                Text(entry.title)
-                    .font(.headline)
-                    .foregroundStyle(theme.textPrimary)
-                if let details = entry.details {
-                    Text(details)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(entry.title)
+                        .font(.headline)
+                        .foregroundStyle(theme.textPrimary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    StatusBadge(status: status, fallbackSlug: entry.state)
+                }
+                // The comments follow the text: pinned to the right they made a second column
+                // under the status.
+                HStack(spacing: 8) {
+                    Text(entry.details ?? " ")
                         .font(.subheadline)
                         .foregroundStyle(theme.textSecondary)
-                        .lineLimit(2)
-                }
-                HStack(spacing: 8) {
-                    if entry.onlyYou {
-                        OnlyYouBadge()
-                    } else {
-                        StatusBadge(status: status, fallbackSlug: entry.state)
-                    }
+                        .lineLimit(1)
                     if behaviour.showCommentCount && entry.commentCount > 0 {
-                        Label("\(entry.commentCount)", systemImage: "bubble.left")
-                            .font(.caption)
-                            .foregroundStyle(theme.textSecondary)
-                            .accessibilityLabel("\(entry.commentCount) \(strings(.commentsTitle))")
+                        HStack(spacing: 3) {
+                            Image(systemName: "bubble.left.fill")
+                            Text("\(entry.commentCount)").monospacedDigit()
+                        }
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(theme.textSecondary)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("\(entry.commentCount) \(strings(.commentsTitle))")
                     }
                 }
             }
-            Spacer(minLength: 0)
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
     }
 }
 

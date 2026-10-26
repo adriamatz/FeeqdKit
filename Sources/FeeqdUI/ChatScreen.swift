@@ -172,10 +172,12 @@ private struct ChatEmptyState: View {
 /// The chat on its own, for `Feeqd.ChatView()`: its own navigation and the dashboard's theme.
 package struct StandaloneChatScreen: View {
     private let context: FeeqdContext
+    private let ownsNavigation: Bool
     @StateObject private var board: BoardStore
 
-    package init(context: FeeqdContext) {
+    package init(context: FeeqdContext, ownsNavigation: Bool = true) {
         self.context = context
+        self.ownsNavigation = ownsNavigation
         _board = StateObject(wrappedValue: BoardStore(client: context.client, preferredBoardID: context.preferredBoardID))
     }
 
@@ -183,8 +185,12 @@ package struct StandaloneChatScreen: View {
     private var theme: ResolvedTheme { ResolvedTheme(config: board.config, overrides: context.themeOverrides) }
 
     package var body: some View {
-        NavigationStack {
-            ChatScreen(client: context.client)
+        Group {
+            if ownsNavigation {
+                NavigationStack { ChatScreen(client: context.client) }
+            } else {
+                ChatScreen(client: context.client)
+            }
         }
         .tint(theme.primary)
         .feeqdFontDesign(theme.fontDesign)
