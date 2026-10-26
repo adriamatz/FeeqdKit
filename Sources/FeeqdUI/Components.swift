@@ -143,9 +143,12 @@ struct CommentRow: View {
                     .font(.caption)
                     .foregroundStyle(theme.textSecondary)
             }
-            Text(comment.content)
-                .font(.body)
-                .foregroundStyle(theme.textPrimary)
+            Translatable(texts: [comment.content], spacing: 6) { shown, translateButton in
+                Text(shown[0])
+                    .font(.body)
+                    .foregroundStyle(theme.textPrimary)
+                translateButton
+            }
             if comment.isPendingModeration {
                 Text(strings(.commentPending))
                     .font(.caption)

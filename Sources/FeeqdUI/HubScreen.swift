@@ -130,6 +130,7 @@ package struct HubScreen: View {
         .feeqdFontDesign(theme.fontDesign)
         .environment(\.feeqdStrings, strings)
         .environment(\.feeqdTheme, theme)
+        .environment(\.feeqdTranslation, context.translation)
         .task { await model.load() }
         .sheet(isPresented: $showingSubmit, onDismiss: { Task { await model.refreshConfig() } }) {
             if let boardID = current?.boardID {
@@ -173,6 +174,7 @@ package struct HubScreen: View {
             .feeqdFontDesign(theme.fontDesign)
             .environment(\.feeqdStrings, strings)
             .environment(\.feeqdTheme, theme)
+            .environment(\.feeqdTranslation, context.translation)
     }
 
     @ViewBuilder
@@ -387,6 +389,7 @@ struct BoardListView: View {
 
     @Environment(\.feeqdStrings) private var strings
     @Environment(\.feeqdTheme) private var theme
+    @Environment(\.feeqdTranslation) private var translation
 
     var body: some View {
         content
@@ -525,6 +528,7 @@ struct BoardListView: View {
                 EntryDetailScreen(entryID: opened.id, store: store, seed: opened)
                     .environment(\.feeqdStrings, strings)
                     .environment(\.feeqdTheme, theme)
+                    .environment(\.feeqdTranslation, translation)
                     .tint(theme.primary)
             }
         }
@@ -628,6 +632,7 @@ struct RoadmapView: View {
 
     @Environment(\.feeqdStrings) private var strings
     @Environment(\.feeqdTheme) private var theme
+    @Environment(\.feeqdTranslation) private var translation
 
     var body: some View {
         switch store.phase {
@@ -645,6 +650,7 @@ struct RoadmapView: View {
                     EntryDetailScreen(entryID: opened.id, store: boardStore(opened.boardID), seed: opened)
                         .environment(\.feeqdStrings, strings)
                         .environment(\.feeqdTheme, theme)
+                        .environment(\.feeqdTranslation, translation)
                         .tint(theme.primary)
                 }
             }

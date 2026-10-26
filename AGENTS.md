@@ -29,7 +29,7 @@ Code is only for: integrating, where the screen is opened, who the user is, sign
 Swift Package Manager, product `FeeqdKit`:
 
 ```swift
-.package(url: "https://github.com/adriamatz/FeeqdKit", from: "0.2.0")
+.package(url: "https://github.com/adriamatz/FeeqdKit", from: "0.3.0")
 ```
 
 In an Xcode project: File → Add Package Dependencies… → `https://github.com/adriamatz/FeeqdKit`, and add `FeeqdKit` to the app target.
@@ -46,7 +46,8 @@ Feeqd.configure(FeeqdConfiguration(
     strings: [String: String] = [:],     // wins over the dashboard's copy, by key
     appVersion: String? = nil,           // defaults to CFBundleShortVersionString
     showsChatButton: Bool = true,        // the chat button on the feedback screen
-    collectPurchases: Bool = false       // read App Store purchases (StoreKit), read-only
+    collectPurchases: Bool = false,      // read App Store purchases (StoreKit), read-only
+    translation: FeeqdTranslation = .automatic  // "See translation" on requests and comments
 ))
 // readerURL / gathererURL also exist: leave them alone, the defaults are production.
 
@@ -70,6 +71,7 @@ FeeqdTheme(primary:, background:, surface:, textPrimary:, textSecondary:,
 FeeqdStatusColors(open:, inProgress:, done:, byStatus: [String: Color])
 FeeqdFontDesign: .standard, .rounded, .serif, .monospaced
 FeeqdPayment: .weekly(Decimal, currency:), .monthly(...), .yearly(...), .lifetime(...)
+FeeqdTranslation: .automatic, .hidden    // on-device, iOS 18+; never shown before
 Feeqd.version                            // the SDK version string
 ```
 
@@ -176,7 +178,7 @@ Feeqd.configure(FeeqdConfiguration(
 
 Keys you can override (anything else is ignored):
 
-`board.title`, `submit.cta`, `submit.title`, `submit.send`, `submit.sent.title`, `submit.sent.message`, `empty.title`, `empty.message`, `search.prompt`, `tab.open`, `tab.done`, `tab.mine`, `chat.button`, `chat.title`, `chat.empty.title`, `chat.empty.message`, `home.title`, `home.subtitle`, `hub.requests`, `hub.bugs`, `hub.roadmap`, `roadmap.empty`.
+`board.title`, `submit.cta`, `submit.title`, `submit.send`, `submit.sent.title`, `submit.sent.message`, `empty.title`, `empty.message`, `search.prompt`, `tab.open`, `tab.done`, `tab.mine`, `chat.button`, `chat.title`, `chat.empty.title`, `chat.empty.message`, `home.title`, `home.subtitle`, `hub.requests`, `hub.bugs`, `hub.roadmap`, `roadmap.empty`, `translate.see`, `translate.original`.
 
 ```swift
 strings: ["board.title": "Ideas", "submit.cta": "Suggest something"]

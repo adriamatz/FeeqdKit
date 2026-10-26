@@ -29,6 +29,8 @@ package enum StringKey: String, CaseIterable, Sendable {
     case commentTeam = "comment.team"
     case commentPinned = "comment.pinned"
     case commentPending = "comment.pending"
+    case translateSee = "translate.see"
+    case translateOriginal = "translate.original"
     case submitCTA = "submit.cta"
     case submitTitle = "submit.title"
     case submitTitlePlaceholder = "submit.titlePlaceholder"
@@ -145,6 +147,8 @@ package struct StringTable: Sendable {
             "comment.team": "Team",
             "comment.pinned": "Pinned",
             "comment.pending": "Waiting for the team to approve it.",
+            "translate.see": "See translation",
+            "translate.original": "See original",
             "submit.cta": "New request",
             "submit.title": "New request",
             "submit.titlePlaceholder": "What would you like?",
@@ -214,6 +218,8 @@ package struct StringTable: Sendable {
             "comment.team": "Equipo",
             "comment.pinned": "Fijado",
             "comment.pending": "Pendiente de que el equipo lo apruebe.",
+            "translate.see": "Ver traducción",
+            "translate.original": "Ver original",
             "submit.cta": "Nueva sugerencia",
             "submit.title": "Nueva sugerencia",
             "submit.titlePlaceholder": "¿Qué te gustaría?",

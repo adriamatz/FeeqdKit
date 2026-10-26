@@ -2,7 +2,7 @@
 
 In-app feedback for iOS: requests with votes, comments, a way to ask for something new, and a private chat with your team, backed by [Feeqd](https://feeqd.com). SwiftUI, iOS 16+, no dependencies.
 
-> **0.2.0.** Talks to production out of the box. You need a Feeqd plan that includes the iOS SDK, and the publishable key from **App & SDK** in the dashboard.
+> **0.3.0.** Talks to production out of the box. You need a Feeqd plan that includes the iOS SDK, and the publishable key from **App & SDK** in the dashboard.
 
 ## Installation
 
@@ -11,7 +11,7 @@ In Xcode: **File → Add Package Dependencies…** and paste `https://github.com
 Or in `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/adriamatz/FeeqdKit", from: "0.2.0")
+.package(url: "https://github.com/adriamatz/FeeqdKit", from: "0.3.0")
 ```
 
 and add `FeeqdKit` to your target's dependencies.
@@ -83,7 +83,8 @@ Feeqd.configure(FeeqdConfiguration(
     boardID: "…",                                   // optional: saves a round trip at launch
     theme: FeeqdTheme(primary: .orange),            // wins over the dashboard's colours
     strings: ["board.title": "Ideas"],              // wins over the dashboard's copy
-    showsChatButton: true                           // the chat button on the board (default)
+    showsChatButton: true,                          // the chat button on the board (default)
+    translation: .automatic                         // "See translation" on other languages (default); .hidden turns it off
 ))
 
 Feeqd.setIdentityToken(jwt)                          // a user your server vouched for
@@ -148,6 +149,7 @@ Cross-target APIs use the `package` access level, so the app integrating the SDK
 - **"Sent", never "published".** Submissions are accepted with `202 queued` and no id; the board may hold them for moderation. The list reloads shortly after.
 - **One conversation at a time.** The server keeps one open conversation per key and device; the chat shows it, or the latest closed one. Writing after the team closed it opens a new one. An unknown sender from the server reads as the team, never as the user.
 - **Loaded-and-empty is not failed.** An empty board invites the first request; a failed load shows an error and a retry, never an inviting empty screen.
+- **"See translation" is the device's.** Requests and comments in another language than the device's first preferred one get a small "See translation" / "See original" under the text (in the detail: title and description together). Apple's Translation framework does it on the phone, nothing goes to Feeqd or anyone else; the first time, iOS may offer to download the languages. It shows only when `NLLanguageRecognizer` is at least 50% sure of the language (a short "OK" or a product name gets none) and the device can translate that pair. iOS 18 and later; never in the list rows, where it would crowd every row. The Simulator cannot translate, so it never shows there: try it on a device.
 - **Strings**: code override → dashboard copy for the locale (`es-MX`) → for the base language (`es`) → bundled table → English. English and Spanish are bundled complete.
 
 ## Not in phase 1, and why

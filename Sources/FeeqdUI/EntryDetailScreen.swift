@@ -54,13 +54,17 @@ struct EntryDetailScreen: View {
         List {
             Section {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(entry.title)
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(theme.textPrimary)
-                    if let details = entry.details {
-                        Text(details)
-                            .font(.body)
-                            .foregroundStyle(theme.textSecondary)
+                    // Title and description switch language together, under one button.
+                    Translatable(texts: [entry.title] + (entry.details.map { [$0] } ?? []), spacing: 10) { shown, translateButton in
+                        Text(shown[0])
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(theme.textPrimary)
+                        if shown.count > 1 {
+                            Text(shown[1])
+                                .font(.body)
+                                .foregroundStyle(theme.textSecondary)
+                        }
+                        translateButton
                     }
                     HStack {
                         StatusBadge(status: store.status(for: entry.state), fallbackSlug: entry.state)

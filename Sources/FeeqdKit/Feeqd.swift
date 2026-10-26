@@ -69,7 +69,8 @@ public enum Feeqd {
             preferredBoardID: configuration.boardID,
             strings: StringTable(overrides: configuration.strings),
             themeOverrides: ThemeOverrides(configuration.theme),
-            showsChatButton: configuration.showsChatButton
+            showsChatButton: configuration.showsChatButton,
+            translation: configuration.translation.mode
         )
         state.withLock { $0 = context }
         Task { await client.announceLaunch(preferredBoardID: configuration.boardID) }
@@ -207,6 +208,10 @@ public struct FeeqdConfiguration: Sendable {
     /// revenue behind each request. Off unless you turn it on: it is your app's data, and you
     /// declare "Purchase History" in your app's privacy details when you do. Read-only.
     public var collectPurchases: Bool
+    /// The "See translation" button on requests and comments written in another language than
+    /// the device's. Translated on the device by Apple's Translation framework: nothing leaves
+    /// the phone. iOS 18 and later; before, it never shows.
+    public var translation: FeeqdTranslation
 
     public init(
         apiKey: String,
@@ -217,7 +222,8 @@ public struct FeeqdConfiguration: Sendable {
         strings: [String: String] = [:],
         appVersion: String? = nil,
         showsChatButton: Bool = true,
-        collectPurchases: Bool = false
+        collectPurchases: Bool = false,
+        translation: FeeqdTranslation = .automatic
     ) {
         self.apiKey = apiKey
         self.boardID = boardID
@@ -228,6 +234,22 @@ public struct FeeqdConfiguration: Sendable {
         self.appVersion = appVersion
         self.showsChatButton = showsChatButton
         self.collectPurchases = collectPurchases
+        self.translation = translation
+    }
+}
+
+/// When the "See translation" button shows, for `FeeqdConfiguration.translation`.
+public enum FeeqdTranslation: Sendable {
+    /// On text whose language differs from the device's, when the device can translate it.
+    case automatic
+    /// Never.
+    case hidden
+
+    var mode: TranslationOffer.Mode {
+        switch self {
+        case .automatic: .automatic
+        case .hidden: .hidden
+        }
     }
 }
 

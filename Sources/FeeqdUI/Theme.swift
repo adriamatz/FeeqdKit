@@ -15,19 +15,23 @@ package struct FeeqdContext: Sendable {
     /// Whether the board offers the chat. Even when true, the button only shows once the
     /// server confirmed the chat works for this key.
     package let showsChatButton: Bool
+    /// The "See translation" button on requests and comments.
+    package let translation: TranslationOffer.Mode
 
     package init(
         client: FeeqdClient,
         preferredBoardID: String?,
         strings: StringTable,
         themeOverrides: ThemeOverrides,
-        showsChatButton: Bool = true
+        showsChatButton: Bool = true,
+        translation: TranslationOffer.Mode = .automatic
     ) {
         self.client = client
         self.preferredBoardID = preferredBoardID
         self.strings = strings
         self.themeOverrides = themeOverrides
         self.showsChatButton = showsChatButton
+        self.translation = translation
     }
 }
 
@@ -173,6 +177,10 @@ private struct StringsKey: EnvironmentKey {
     static let defaultValue = StringTable()
 }
 
+private struct TranslationKey: EnvironmentKey {
+    static let defaultValue = TranslationOffer.Mode.automatic
+}
+
 private struct ThemeKey: EnvironmentKey {
     static let defaultValue = ResolvedTheme(config: .fallback, overrides: ThemeOverrides())
 }
@@ -186,6 +194,11 @@ extension EnvironmentValues {
     var feeqdTheme: ResolvedTheme {
         get { self[ThemeKey.self] }
         set { self[ThemeKey.self] = newValue }
+    }
+
+    var feeqdTranslation: TranslationOffer.Mode {
+        get { self[TranslationKey.self] }
+        set { self[TranslationKey.self] = newValue }
     }
 }
 
