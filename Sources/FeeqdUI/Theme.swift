@@ -247,6 +247,28 @@ extension View {
     func feeqdRowList() -> some View {
         listStyle(.plain)
     }
+
+    /// A message field in the theme's colours. The system's rounded border paints its own
+    /// background, black in dark mode whatever the app's colours.
+    func feeqdComposerField(_ theme: ResolvedTheme) -> some View {
+        textFieldStyle(.plain)
+            .foregroundStyle(theme.textPrimary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(theme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(theme.textSecondary.opacity(0.25), lineWidth: 0.5)
+            )
+    }
+
+    /// The bar a composer sits in, on the theme's background.
+    func feeqdComposerBar(_ theme: ResolvedTheme) -> some View {
+        padding(.horizontal)
+            .padding(.vertical, 10)
+            .background(theme.background)
+            .overlay(alignment: .top) { Divider() }
+    }
 }
 
 /// The message for an error, in the user's words.

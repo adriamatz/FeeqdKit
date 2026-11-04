@@ -147,7 +147,7 @@ struct EntryDetailScreen: View {
                 )
                 .lineLimit(1...4)
                 .focused($composerFocused)
-                .textFieldStyle(.roundedBorder)
+                .feeqdComposerField(theme)
                 Button {
                     Task {
                         if await comments.send(content: draft, parentID: replyingTo?.id) {
@@ -163,8 +163,6 @@ struct EntryDetailScreen: View {
                 .accessibilityLabel(strings(.commentSend))
             }
         }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-        .background(.bar)
+        .feeqdComposerBar(theme)
     }
 }

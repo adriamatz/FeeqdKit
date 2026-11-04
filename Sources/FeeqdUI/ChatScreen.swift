@@ -88,7 +88,7 @@ package struct ChatScreen: View {
             TextField(strings(.chatPlaceholder), text: $draft, axis: .vertical)
                 .lineLimit(1...5)
                 .focused($composerFocused)
-                .textFieldStyle(.roundedBorder)
+                .feeqdComposerField(theme)
             Button {
                 let text = draft
                 Task {
@@ -101,9 +101,7 @@ package struct ChatScreen: View {
             .disabled(draft.feeqdTrimmed.isEmpty || store.isSending)
             .accessibilityLabel(strings(.chatSend))
         }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-        .background(.bar)
+        .feeqdComposerBar(theme)
     }
 }
 

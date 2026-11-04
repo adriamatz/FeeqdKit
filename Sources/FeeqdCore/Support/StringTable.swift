@@ -166,7 +166,7 @@ package struct StringTable: Sendable {
             "chat.title": "Message us",
             "chat.button": "Message the team",
             "chat.empty.title": "Talk to the team",
-            "chat.empty.message": "Something wrong, or an idea? Write here — only the team sees it, and the answer arrives here.",
+            "chat.empty.message": "Something wrong, or an idea? Write here. Only the team sees it, and the answer arrives here.",
             "chat.placeholder": "Message",
             "chat.send": "Send",
             "chat.team": "Team",
