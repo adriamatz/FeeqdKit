@@ -224,14 +224,17 @@ extension View {
         #endif
     }
 
-    /// The search out of the way: browsing is what the screen is for. On iOS 26 a button in the
-    /// bar, when the bar has room for it; otherwise a field that hides once the list scrolls.
+    /// The search out of the way: browsing is what the screen is for. On iOS 26 a magnifier at
+    /// the top trailing corner, next to the add button, when the bar has room for it (iOS would put
+    /// it at the bottom); otherwise a field that hides once the list scrolls.
     @ViewBuilder
     func feeqdSearchable(text: Binding<String>, prompt: String, asButton: Bool) -> some View {
         #if os(iOS)
         if #available(iOS 26, *), asButton {
             // A magnifier in the bar that opens the field.
-            searchable(text: text, prompt: prompt).searchToolbarBehavior(.minimize)
+            searchable(text: text, prompt: prompt)
+                .searchToolbarBehavior(.minimize)
+                .toolbar { DefaultToolbarItem(kind: .search, placement: .topBarTrailing) }
         } else {
             searchable(text: text, placement: .navigationBarDrawer(displayMode: .automatic), prompt: prompt)
         }
