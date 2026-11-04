@@ -60,6 +60,75 @@ struct StatusBadge: View {
     }
 }
 
+/// Where a request stands, as a shape before a word: dashed while it waits, a ring once looked
+/// at, a dot inside when planned, half full in progress, filled when closed. The same marks the
+/// dashboard draws, in the colour the dashboard gave the status.
+struct StatusMark: View {
+    let status: RemoteStatus?
+    let fallbackSlug: String
+    var size: CGFloat = 13
+
+    @Environment(\.feeqdTheme) private var theme
+
+    private enum Mark { case waiting, reviewed, planned, progress, done, declined }
+
+    private var shape: Mark {
+        let slug = status?.slug ?? fallbackSlug
+        switch slug {
+        case "pending", "reported": return .waiting
+        case "in_review": return .reviewed
+        case "planned", "confirmed": return .planned
+        case "in_progress", "known_issue": return .progress
+        case "completed", "fixed", "implemented": return .done
+        case "declined", "cannot_reproduce", "rejected": return .declined
+        default:
+            switch status?.category {
+            case .progress: return .progress
+            case .closed: return .done
+            default: return .reviewed
+            }
+        }
+    }
+
+    var body: some View {
+        let color = theme.color(for: status, slug: fallbackSlug)
+        let line = size * 0.12
+        ZStack {
+            switch shape {
+            case .done, .declined:
+                Circle().fill(color)
+                Image(systemName: shape == .done ? "checkmark" : "xmark")
+                    .font(.system(size: size * 0.55, weight: .heavy))
+                    .foregroundStyle(.white)
+            case .waiting:
+                Circle().strokeBorder(color, style: StrokeStyle(lineWidth: line, dash: [size * 0.15, size * 0.15]))
+            case .reviewed:
+                Circle().strokeBorder(color, lineWidth: line)
+            case .planned:
+                Circle().strokeBorder(color, lineWidth: line)
+                Circle().fill(color).frame(width: size * 0.3, height: size * 0.3)
+            case .progress:
+                Circle().strokeBorder(color, lineWidth: line)
+                HalfCircle().fill(color).padding(size * 0.22)
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
+
+/// The right half of a circle, for the in-progress mark.
+private struct HalfCircle: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addArc(center: center, radius: rect.width / 2, startAngle: .degrees(-90), endAngle: .degrees(90), clockwise: false)
+        path.closeSubpath()
+        return path
+    }
+}
+
 struct EntryRow: View {
     let entry: Entry
     let status: RemoteStatus?
@@ -70,42 +139,38 @@ struct EntryRow: View {
     @Environment(\.feeqdStrings) private var strings
     @Environment(\.feeqdTheme) private var theme
 
-    /// Votes, then the title with where it stands beside it, then one line of what was asked.
+    /// Votes, then the title, and under it where it stands and how much it was talked about.
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
-            VoteButton(count: entry.voteCount, voted: voted, showsCount: behaviour.showVoteCount, action: onVote)
+            VoteButton(count: entry.voteCount, voted: voted, showsCount: behaviour.showVoteCount, size: 44, action: onVote)
                 // Nobody else sees it, so nobody can vote on it yet, the author included.
                 .disabled(entry.onlyYou)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(entry.title)
-                        .font(.headline)
-                        .foregroundStyle(theme.textPrimary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                    StatusBadge(status: status, fallbackSlug: entry.state)
-                }
-                // The comments follow the text: pinned to the right they made a second column
-                // under the status.
-                HStack(spacing: 8) {
-                    Text(entry.details ?? " ")
-                        .font(.subheadline)
-                        .foregroundStyle(theme.textSecondary)
-                        .lineLimit(1)
+            VStack(alignment: .leading, spacing: 5) {
+                Text(entry.title)
+                    .font(.headline)
+                    .foregroundStyle(theme.textPrimary)
+                    .lineLimit(2)
+                HStack(spacing: 10) {
+                    HStack(spacing: 5) {
+                        StatusMark(status: status, fallbackSlug: entry.state)
+                        Text(status?.label ?? entry.state.replacingOccurrences(of: "_", with: " ").capitalized)
+                    }
                     if behaviour.showCommentCount && entry.commentCount > 0 {
                         HStack(spacing: 3) {
-                            Image(systemName: "bubble.left.fill")
+                            Image(systemName: "bubble.left")
                             Text("\(entry.commentCount)").monospacedDigit()
                         }
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(theme.textSecondary)
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel("\(entry.commentCount) \(strings(.commentsTitle))")
                     }
                 }
+                .font(.subheadline)
+                .foregroundStyle(theme.textSecondary)
+                .lineLimit(1)
             }
+            Spacer(minLength: 0)
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 6)
     }
 }
 

@@ -240,21 +240,9 @@ extension View {
         #endif
     }
 
-    /// Rows in one rounded card on the grouped background (iOS); a plain list elsewhere.
-    @ViewBuilder
-    func feeqdCardList() -> some View {
-        #if os(iOS)
-        if #available(iOS 17, *) {
-            // The grouped style's own top margin is a whole empty band under the switcher.
-            listStyle(.insetGrouped)
-                .contentMargins(.top, 4, for: .scrollContent)
-                .listSectionSpacing(.compact)
-        } else {
-            listStyle(.insetGrouped)
-        }
-        #else
+    /// Rows straight on the screen's background, a hairline between them.
+    func feeqdRowList() -> some View {
         listStyle(.plain)
-        #endif
     }
 }
 

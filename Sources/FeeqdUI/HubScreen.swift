@@ -458,25 +458,19 @@ struct BoardListView: View {
     private var list: some View {
         let rows = showsTabs ? store.entries(in: tab) : store.entries
         return List {
-            // The rows sit in one card, the way iOS groups a list; the chips above it and the
-            // footer below stay on the background.
+            // Rows on the background with hairlines between them, like the dashboard's lists.
             Section {
             ForEach(rows) { entry in
                 Button {
                     opened = entry
                 } label: {
-                    HStack(spacing: 8) {
-                        EntryRow(
-                            entry: entry,
-                            status: store.status(for: entry.state),
-                            voted: store.votedIDs.contains(entry.id),
-                            behaviour: store.config.behaviour
-                        ) {
-                            Task { await store.toggleVote(entryID: entry.id) }
-                        }
-                        Image(systemName: "chevron.right")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.tertiary)
+                    EntryRow(
+                        entry: entry,
+                        status: store.status(for: entry.state),
+                        voted: store.votedIDs.contains(entry.id),
+                        behaviour: store.config.behaviour
+                    ) {
+                        Task { await store.toggleVote(entryID: entry.id) }
                     }
                     .contentShape(Rectangle())
                 }
@@ -515,8 +509,10 @@ struct BoardListView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
+            // Lines between rows only: none over the first or under the footer.
+            .listSectionSeparator(.hidden)
         }
-        .feeqdCardList()
+        .feeqdRowList()
         .safeAreaInset(edge: .top, spacing: 0) {
             // Open / Closed across the width, pinned under the title: what a list of requests
             // in an iOS app usually opens with.
