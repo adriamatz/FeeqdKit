@@ -16,6 +16,10 @@ package struct ChatScreen: View {
 
     package var body: some View {
         content
+            // Behind the messages and the loading and error states, which otherwise show the
+            // system's background, black in dark mode.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(theme.background.ignoresSafeArea())
             .navigationTitle(strings(.chatTitle))
             .feeqdInlineTitle()
             .task {

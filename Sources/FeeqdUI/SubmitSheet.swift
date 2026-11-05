@@ -21,6 +21,8 @@ struct SubmitSheet: View {
             Group {
                 if sent { sentView } else { form }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(theme.background.ignoresSafeArea())
             .navigationTitle(strings(.submitTitle))
             .feeqdInlineTitle()
             .toolbar {
@@ -55,20 +57,25 @@ struct SubmitSheet: View {
                 TextField(strings(.submitDescriptionPlaceholder), text: $details, axis: .vertical)
                     .lineLimit(3...8)
             }
+            .listRowBackground(theme.surface)
             if !similar.isEmpty {
                 Section(strings(.submitSimilar)) {
                     ForEach(similar) { entry in
                         Text(entry.title).foregroundStyle(theme.textSecondary)
                     }
                 }
+                .listRowBackground(theme.surface)
             }
             if let error {
                 Section {
                     Text(error == .quotaExceeded ? strings(.submitQuotaExceeded) : feeqdMessage(for: error, strings: strings))
                         .foregroundStyle(.red)
                 }
+                .listRowBackground(theme.surface)
             }
         }
+        // The fields on the theme's surface, the screen behind them on its background.
+        .scrollContentBackground(.hidden)
         .disabled(sending)
     }
 

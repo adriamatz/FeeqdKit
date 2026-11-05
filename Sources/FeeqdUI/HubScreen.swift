@@ -636,6 +636,15 @@ struct RoadmapView: View {
     @Environment(\.feeqdTranslation) private var translation
 
     var body: some View {
+        phases
+            // Behind the columns and the loading and error states, which otherwise show the
+            // system's background.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(theme.background.ignoresSafeArea())
+    }
+
+    @ViewBuilder
+    private var phases: some View {
         switch store.phase {
         case .loading:
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
