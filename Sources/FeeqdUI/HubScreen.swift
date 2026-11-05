@@ -393,6 +393,10 @@ struct BoardListView: View {
 
     var body: some View {
         content
+            // Behind the list and the empty, loading and error states alike, which otherwise
+            // show the system's background.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(theme.background.ignoresSafeArea())
             .task { if store.needsLoad { await store.load() } }
             .task(id: searchText) {
                 guard !searchText.isEmpty || !store.query.isEmpty else { return }
@@ -511,8 +515,9 @@ struct BoardListView: View {
             }
             // Lines between rows only: none over the first or under the footer.
             .listSectionSeparator(.hidden)
+            .listRowBackground(theme.background)
         }
-        .feeqdRowList()
+        .feeqdRowList(theme)
         .safeAreaInset(edge: .top, spacing: 0) {
             // Open / Closed across the width, pinned under the title: what a list of requests
             // in an iOS app usually opens with.

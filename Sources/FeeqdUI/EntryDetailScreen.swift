@@ -83,6 +83,7 @@ struct EntryDetailScreen: View {
                 }
                 .padding(.vertical, 4)
             }
+            .listRowBackground(theme.surface)
 
             // In review, the thread is the author's and the team's; the public joins once it is published.
             if !entry.onlyYou || comments.isOpen {
@@ -115,8 +116,11 @@ struct EntryDetailScreen: View {
                         Text(strings(.entryOnlyYouHint))
                     }
                 }
+                .listRowBackground(theme.surface)
             }
         }
+        // The grouped cards on the theme's surface, the screen behind them on its background.
+        .feeqdListBackground(theme)
         .safeAreaInset(edge: .bottom) {
             if !entry.onlyYou || comments.isOpen { composer }
         }

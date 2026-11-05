@@ -243,9 +243,18 @@ extension View {
         #endif
     }
 
-    /// Rows straight on the screen's background, a hairline between them.
-    func feeqdRowList() -> some View {
+    /// Rows straight on the screen's background, a hairline between them. A List paints the
+    /// system background behind its rows, black in dark mode whatever the app's colours, so it
+    /// is hidden and the theme's drawn instead. The rows need `.listRowBackground` too.
+    func feeqdRowList(_ theme: ResolvedTheme) -> some View {
         listStyle(.plain)
+            .feeqdListBackground(theme)
+    }
+
+    /// A List on the theme's background instead of the system's.
+    func feeqdListBackground(_ theme: ResolvedTheme) -> some View {
+        scrollContentBackground(.hidden)
+            .background(theme.background.ignoresSafeArea())
     }
 
     /// A message field in the theme's colours. The system's rounded border paints its own
