@@ -80,6 +80,22 @@ final class ChatTests: XCTestCase {
 
     // MARK: Decoding
 
+    func testATeamReviewRequestCarriesTheAppStoreID() throws {
+        let data = Data(#"""
+        {"items":[
+          {"id":"M1","sender":"team","kind":"text","body":"A review would help","context":{"review":{"app_store_id":"1234567890"}}},
+          {"id":"M2","sender":"device","kind":"text","body":"Mine","context":{"review":{"app_store_id":"1234567890"}}},
+          {"id":"M3","sender":"team","kind":"text","body":"Bad id","context":{"review":{"app_store_id":"id12"}}},
+          {"id":"M4","sender":"team","kind":"text","body":"Plain","context":null}
+        ],"status":"open"}
+        """#.utf8)
+        let items = try JSONDecoder.feeqd.decode(ChatMessageList.self, from: data).items
+
+        XCTAssertEqual(items.map(\.reviewAppStoreID), ["1234567890", nil, nil, nil],
+                       "only the team asks for a review, and only with an id made of digits")
+        XCTAssertTrue(items[0].isText, "a review request is still a message the user reads")
+    }
+
     func testUnknownValuesNeverDrawSomeoneElseAsTheUser() throws {
         let data = Data(#"{"items":[{"id":"M1","sender":"bot","kind":"text","body":"Hi"}],"status":"archived"}"#.utf8)
         let list = try JSONDecoder.feeqd.decode(ChatMessageList.self, from: data)

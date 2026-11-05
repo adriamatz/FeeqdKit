@@ -57,6 +57,8 @@ package enum StringKey: String, CaseIterable, Sendable {
     case chatQuotaExceeded = "chat.quotaExceeded"
     case chatTooLong = "chat.tooLong"
     case chatUnread = "chat.unread"
+    case reviewTitle = "review.title"
+    case reviewButton = "review.button"
     case sectionRequests = "hub.requests"
     case sectionBugs = "hub.bugs"
     case sectionRoadmap = "hub.roadmap"
@@ -175,6 +177,8 @@ package struct StringTable: Sendable {
             "chat.quotaExceeded": "The team can't take new conversations right now. Try again later.",
             "chat.tooLong": "That message is too long.",
             "chat.unread": "New reply",
+            "review.title": "Enjoying the app?",
+            "review.button": "Rate on the App Store",
             "hub.requests": "Feature Requests",
             "hub.bugs": "Bugs",
             "hub.roadmap": "Roadmap",
@@ -246,6 +250,8 @@ package struct StringTable: Sendable {
             "chat.quotaExceeded": "El equipo no puede abrir conversaciones nuevas ahora mismo. Inténtalo más tarde.",
             "chat.tooLong": "El mensaje es demasiado largo.",
             "chat.unread": "Respuesta nueva",
+            "review.title": "¿Te gusta la app?",
+            "review.button": "Valorar en la App Store",
             "hub.requests": "Peticiones",
             "hub.bugs": "Errores",
             "hub.roadmap": "Roadmap",

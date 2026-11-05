@@ -66,22 +66,38 @@ package struct ChatMessage: Decodable, Equatable, Sendable, Identifiable {
     package let kind: String
     package let body: String
     package let createdAt: Date?
+    /// The App Store id of the app when the team asks for a review with this message: the chat
+    /// draws a card with a button to the store's review page under it. Only the team's, and
+    /// only an id made of digits, so the button never opens anything else.
+    package let reviewAppStoreID: String?
 
     package var isText: Bool { kind == "text" && !body.isEmpty }
 
-    package init(id: String, sender: Sender, senderName: String?, kind: String, body: String, createdAt: Date?) {
+    package init(
+        id: String, sender: Sender, senderName: String?, kind: String, body: String, createdAt: Date?,
+        reviewAppStoreID: String? = nil
+    ) {
         self.id = id
         self.sender = sender
         self.senderName = senderName
         self.kind = kind
         self.body = body
         self.createdAt = createdAt
+        self.reviewAppStoreID = reviewAppStoreID
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, sender, kind, body
+        case id, sender, kind, body, context
         case senderName = "sender_name"
         case createdAt = "created_at"
+    }
+
+    private struct Context: Decodable {
+        struct Review: Decodable {
+            let appStoreID: String
+            enum CodingKeys: String, CodingKey { case appStoreID = "app_store_id" }
+        }
+        let review: Review?
     }
 
     /// An unknown sender reads as the team: the one thing that must never happen is someone
@@ -94,6 +110,9 @@ package struct ChatMessage: Decodable, Equatable, Sendable, Identifiable {
         kind = (try? c.decode(String.self, forKey: .kind)) ?? "text"
         body = (try? c.decode(String.self, forKey: .body)) ?? ""
         createdAt = (try? c.decode(String.self, forKey: .createdAt)).flatMap(FeeqdDate.parse)
+        let storeID = (try? c.decode(Context.self, forKey: .context))?.review?.appStoreID ?? ""
+        let digits = !storeID.isEmpty && storeID.allSatisfy { ("0"..."9").contains($0) }
+        reviewAppStoreID = sender == .team && digits ? storeID : nil
     }
 }
 
