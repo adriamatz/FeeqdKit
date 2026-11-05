@@ -119,6 +119,9 @@ package struct Comment: Decodable, Identifiable, Hashable, Sendable {
     package let isTeamMember: Bool
     package let isPinned: Bool
     package let createdAt: Date
+    /// The App Store id of the app when a team reply asks for a review: a card with a button to
+    /// the store's review page shows under it. Only the team's, and only an id made of digits.
+    package let reviewAppStoreID: String?
     /// Local only: a comment just written that the board holds for moderation.
     package var isPendingModeration: Bool
 
@@ -130,6 +133,7 @@ package struct Comment: Decodable, Identifiable, Hashable, Sendable {
         isTeamMember: Bool,
         isPinned: Bool,
         createdAt: Date,
+        reviewAppStoreID: String? = nil,
         isPendingModeration: Bool = false
     ) {
         self.id = id
@@ -139,12 +143,14 @@ package struct Comment: Decodable, Identifiable, Hashable, Sendable {
         self.isTeamMember = isTeamMember
         self.isPinned = isPinned
         self.createdAt = createdAt
+        self.reviewAppStoreID = reviewAppStoreID
         self.isPendingModeration = isPendingModeration
     }
 
     enum CodingKeys: String, CodingKey {
         case id, parentID = "parent_id", content, authorName = "author_name"
         case isTeamMember = "is_team_member", isPinned = "is_pinned", createdAt = "created_at"
+        case reviewAppStoreID = "review_app_store_id"
     }
 
     package init(from decoder: Decoder) throws {
@@ -156,6 +162,14 @@ package struct Comment: Decodable, Identifiable, Hashable, Sendable {
         isTeamMember = (try? c.decode(Bool.self, forKey: .isTeamMember)) ?? false
         isPinned = (try? c.decode(Bool.self, forKey: .isPinned)) ?? false
         createdAt = try c.decode(Date.self, forKey: .createdAt)
+        reviewAppStoreID = isTeamMember ? appStoreID((try? c.decode(String.self, forKey: .reviewAppStoreID))) : nil
         isPendingModeration = false
     }
+}
+
+/// An App Store id as a review request's button may open it: digits only, else nothing, so a
+/// card never links anywhere but the App Store page of an app.
+package func appStoreID(_ value: String?) -> String? {
+    guard let value, !value.isEmpty, value.allSatisfy({ ("0"..."9").contains($0) }) else { return nil }
+    return value
 }

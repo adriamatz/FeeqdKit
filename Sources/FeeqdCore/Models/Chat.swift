@@ -110,9 +110,8 @@ package struct ChatMessage: Decodable, Equatable, Sendable, Identifiable {
         kind = (try? c.decode(String.self, forKey: .kind)) ?? "text"
         body = (try? c.decode(String.self, forKey: .body)) ?? ""
         createdAt = (try? c.decode(String.self, forKey: .createdAt)).flatMap(FeeqdDate.parse)
-        let storeID = (try? c.decode(Context.self, forKey: .context))?.review?.appStoreID ?? ""
-        let digits = !storeID.isEmpty && storeID.allSatisfy { ("0"..."9").contains($0) }
-        reviewAppStoreID = sender == .team && digits ? storeID : nil
+        let storeID = (try? c.decode(Context.self, forKey: .context))?.review?.appStoreID
+        reviewAppStoreID = sender == .team ? appStoreID(storeID) : nil
     }
 }
 

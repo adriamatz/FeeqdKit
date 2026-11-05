@@ -92,6 +92,20 @@ final class DecodingTests: XCTestCase {
         XCTAssertFalse(page.items[0].isTeamMember)
     }
 
+    func testATeamReplyReviewRequestCarriesTheAppStoreID() throws {
+        let data = Data(#"""
+        {"items":[
+          {"id":"C1","content":"A review would help","is_team_member":true,"created_at":"2026-11-05T10:00:00","review_app_store_id":"1234567890"},
+          {"id":"C2","content":"Not the team","is_team_member":false,"created_at":"2026-11-05T10:00:01","review_app_store_id":"1234567890"},
+          {"id":"C3","content":"Bad id","is_team_member":true,"created_at":"2026-11-05T10:00:02","review_app_store_id":"id12"},
+          {"id":"C4","content":"Plain","is_team_member":true,"created_at":"2026-11-05T10:00:03","review_app_store_id":null}
+        ],"pagination":{"page":1,"page_size":50,"total_items":4,"total_pages":1,"has_next":false,"has_previous":false}}
+        """#.utf8)
+        let items = try JSONDecoder.feeqd.decode(Page<Comment>.self, from: data).items
+        XCTAssertEqual(items.map(\.reviewAppStoreID), ["1234567890", nil, nil, nil],
+                       "only the team asks for a review, and only with an id made of digits")
+    }
+
     func testWriteResponsesDecode() throws {
         let vote = try Fixture.decode(VoteResult.self, "vote_cast")
         XCTAssertEqual(vote.voteCount, 1)

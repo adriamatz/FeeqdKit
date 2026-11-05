@@ -160,50 +160,6 @@ struct ChatBubble: View {
     }
 }
 
-/// What the team sends under a message when it asks for a review: the app's page on the App
-/// Store, opened at its review form. A link, not a rating prompt: Apple keeps those to its own
-/// API, so the stars are drawn only to say what the button is for.
-private struct ReviewCard: View {
-    let appStoreID: String
-
-    @Environment(\.feeqdStrings) private var strings
-    @Environment(\.feeqdTheme) private var theme
-    @Environment(\.openURL) private var openURL
-
-    private var reviewURL: URL? { URL(string: "https://apps.apple.com/app/id\(appStoreID)?action=write-review") }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(strings(.reviewTitle))
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(theme.textPrimary)
-            HStack(spacing: 4) {
-                ForEach(0..<5, id: \.self) { _ in
-                    Image(systemName: "star.fill")
-                }
-            }
-            .font(.footnote)
-            .foregroundStyle(Color.orange)
-            .accessibilityHidden(true)
-            Button {
-                if let reviewURL { openURL(reviewURL) }
-            } label: {
-                Text(strings(.reviewButton))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .background(Capsule().fill(theme.primary))
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: theme.cornerRadius, style: .continuous)
-                .fill(theme.textSecondary.opacity(0.14))
-        )
-    }
-}
-
 private struct ChatEmptyState: View {
     @Environment(\.feeqdStrings) private var strings
     @Environment(\.feeqdTheme) private var theme
