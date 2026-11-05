@@ -21,7 +21,7 @@ package struct ChatScreen: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(theme.background.ignoresSafeArea())
             .navigationTitle(strings(.chatTitle))
-            .feeqdInlineTitle()
+            .feeqdInlineTitle(theme)
             .task {
                 await store.load()
                 await store.poll()

@@ -24,7 +24,7 @@ struct SubmitSheet: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(theme.background.ignoresSafeArea())
             .navigationTitle(strings(.submitTitle))
-            .feeqdInlineTitle()
+            .feeqdInlineTitle(theme)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(sent ? strings(.submitDone) : strings(.submitCancel)) { dismiss() }

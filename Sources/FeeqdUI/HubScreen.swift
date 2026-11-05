@@ -193,7 +193,7 @@ package struct HubScreen: View {
                     showingChat = true
                 }
                     .navigationTitle(plan.title)
-                    .feeqdInlineTitle()
+                    .feeqdInlineTitle(theme)
                     .toolbar { closeItem }
             } else if let current {
                 sectionScreen(current, fromHome: false)
@@ -206,7 +206,7 @@ package struct HubScreen: View {
     private func sectionScreen(_ section: HubSection, fromHome: Bool) -> some View {
         sectionContent(section)
             .navigationTitle(fromHome || plan.style == .single ? label(for: section) : (plan.style == .chips ? plan.title : ""))
-            .feeqdInlineTitle()
+            .feeqdInlineTitle(theme)
             .safeAreaInset(edge: .top, spacing: 0) {
                 if !fromHome && plan.style == .chips { chips }
             }
@@ -250,7 +250,7 @@ package struct HubScreen: View {
                             .frame(maxWidth: .infinity)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
-                            .background(.bar)
+                            .background(theme.background)
                     }
                 }
                 // Outside the `.id`: inside it, every board switch installed a new search bar,
@@ -326,7 +326,7 @@ package struct HubScreen: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
         }
-        .background(.bar)
+        .background(theme.background)
     }
 
     // MARK: Chrome
@@ -448,7 +448,7 @@ struct BoardListView: View {
         .labelsHidden()
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(.bar)
+        .background(theme.background)
     }
 
     private func tabLabel(_ tab: SDKConfig.Tab) -> String {

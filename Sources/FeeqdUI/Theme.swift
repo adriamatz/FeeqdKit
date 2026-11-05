@@ -216,9 +216,13 @@ extension ToolbarItemPlacement {
 extension View {
     /// Inline titles on iOS; macOS has no such thing.
     @ViewBuilder
-    func feeqdInlineTitle() -> some View {
+    /// The title small and centred, on a bar of the theme's background: the system's own bar is
+    /// white in light mode and black in dark, whatever the app's colours.
+    func feeqdInlineTitle(_ theme: ResolvedTheme) -> some View {
         #if os(iOS)
         navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(theme.background, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
         #else
         self
         #endif

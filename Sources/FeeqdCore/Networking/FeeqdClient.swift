@@ -2,7 +2,7 @@ import Foundation
 import os
 
 package enum FeeqdCoreVersion {
-    package static let current = "0.4.6"
+    package static let current = "0.4.7"
 }
 
 package struct ClientConfiguration: Sendable {

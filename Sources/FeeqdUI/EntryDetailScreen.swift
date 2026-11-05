@@ -31,7 +31,7 @@ struct EntryDetailScreen: View {
                 ProgressView()
             }
         }
-        .feeqdInlineTitle()
+        .feeqdInlineTitle(theme)
         .task {
             // Opened from the roadmap: the board may not be loaded, and votes need the request
             // and which ones this device already backed.
