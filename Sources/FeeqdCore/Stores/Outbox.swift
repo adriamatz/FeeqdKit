@@ -7,7 +7,9 @@ package struct PendingWrite: Codable, Equatable, Identifiable, Sendable {
     package enum Kind: Codable, Equatable, Sendable {
         case request(boardID: String, title: String, description: String)
         case comment(boardID: String, entryID: String, content: String, parentID: String?)
-        case chatMessage(body: String)
+        /// `conversationID` is where it was going, `nil` when it was starting one: the key names
+        /// the same write only on the same route.
+        case chatMessage(body: String, conversationID: String?)
     }
 
     package let id: String

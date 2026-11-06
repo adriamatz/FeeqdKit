@@ -93,7 +93,7 @@ final class PendingWriteTests: XCTestCase {
     func testAWriteKeptTooLongIsDroppedUnsent() async throws {
         let client = FeeqdClient.stubbed()
         let old = Date().addingTimeInterval(-8 * 24 * 3600)
-        await client.keepForLater(PendingWrite(id: "K1", kind: .chatMessage(body: "Hi"), createdAt: old))
+        await client.keepForLater(PendingWrite(id: "K1", kind: .chatMessage(body: "Hi", conversationID: nil), createdAt: old))
         answer(.json(201, created))
         await client.sendPendingWrites()
         XCTAssertEqual(StubURLProtocol.requests.count, 0)
@@ -101,26 +101,62 @@ final class PendingWriteTests: XCTestCase {
         XCTAssertEqual(left, [])
     }
 
-    func testAKeptChatMessageGoesToTheOpenConversation() async throws {
+    /// The key only names the same write on the same route: a message kept on its way to a
+    /// conversation goes back to that conversation, even if another is open by now.
+    func testAKeptChatMessageGoesBackToTheConversationItWasSentTo() async throws {
         let client = FeeqdClient.stubbed()
-        await client.keepForLater(PendingWrite(id: "K1", kind: .chatMessage(body: "Still crashing")))
-        let conversations = try Fixture.data("chat_conversations")
+        await client.keepForLater(PendingWrite(id: "K1", kind: .chatMessage(body: "Still crashing", conversationID: "C-first")))
         let sent = try Fixture.data("chat_message_created")
-        StubURLProtocol.responder = { request in
-            request.httpMethod == "GET" ? .json(200, conversations) : .json(201, sent)
-        }
+        StubURLProtocol.responder = { _ in .json(201, sent) }
         await client.sendPendingWrites()
 
-        let post = try XCTUnwrap(StubURLProtocol.requests.first { $0.httpMethod == "POST" })
-        XCTAssertEqual(post.url?.path, "/sdk/chat/conversations/0003CHATopen00000000000002/messages")
-        XCTAssertEqual(key(post), "K1")
+        XCTAssertEqual(StubURLProtocol.requests.map(\.url?.path), ["/sdk/chat/conversations/C-first/messages"])
+        XCTAssertEqual(StubURLProtocol.requests.first.flatMap(key), "K1")
         let left = await client.pendingWrites()
         XCTAssertEqual(left, [])
     }
 
+    /// One kept while starting a conversation starts it again, with the same key.
+    func testAKeptFirstMessageStartsTheConversationAgain() async throws {
+        let client = FeeqdClient.stubbed()
+        await client.keepForLater(PendingWrite(id: "K1", kind: .chatMessage(body: "Hello", conversationID: nil)))
+        let started = try Fixture.data("chat_conversation_created")
+        StubURLProtocol.responder = { _ in .json(201, started) }
+        await client.sendPendingWrites()
+
+        let post = try XCTUnwrap(StubURLProtocol.requests.first)
+        XCTAssertEqual(post.url?.path, "/sdk/chat/conversations")
+        XCTAssertEqual(key(post), "K1")
+    }
+
+    /// A message kept by 0.4.10 has no conversation recorded: it still reads, as a first one.
+    func testAMessageKeptByTheLastVersionStillReads() throws {
+        let old = Data(#"[{"id":"K1","kind":{"chatMessage":{"body":"Hi"}},"createdAt":0}]"#.utf8)
+        let writes = try JSONDecoder().decode([PendingWrite].self, from: old)
+        XCTAssertEqual(writes.first?.kind, .chatMessage(body: "Hi", conversationID: nil))
+    }
+
+    func testAChatMessageKeptInAConversationRemembersIt() async throws {
+        let conversations = try Fixture.data("chat_conversations")
+        let messages = try Fixture.data("chat_messages")
+        StubURLProtocol.responder = { request in
+            let path = request.url?.path ?? ""
+            if request.httpMethod == "GET" { return path.hasSuffix("/messages") ? .json(200, messages) : .json(200, conversations) }
+            if path.hasSuffix("/read") { return .init(status: 204) }
+            return .failure(.notConnectedToInternet)
+        }
+        let client = FeeqdClient.stubbed()
+        let store = ChatStore(client: client)
+        await store.load()
+        _ = await store.send("Still crashing")
+
+        let kept = await client.pendingWrites()
+        XCTAssertEqual(kept.first?.kind, .chatMessage(body: "Still crashing", conversationID: "0003CHATopen00000000000002"))
+    }
+
     func testResetForgetsThePreviousUsersPendingWrites() async throws {
         let client = FeeqdClient.stubbed()
-        await client.keepForLater(PendingWrite(id: "K1", kind: .chatMessage(body: "Hi")))
+        await client.keepForLater(PendingWrite(id: "K1", kind: .chatMessage(body: "Hi", conversationID: nil)))
         await client.reset()
         let left = await client.pendingWrites()
         XCTAssertEqual(left, [])

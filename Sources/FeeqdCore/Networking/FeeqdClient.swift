@@ -2,7 +2,7 @@ import Foundation
 import os
 
 package enum FeeqdCoreVersion {
-    package static let current = "0.4.10"
+    package static let current = "0.4.11"
 }
 
 package struct ClientConfiguration: Sendable {
@@ -431,13 +431,12 @@ package actor FeeqdClient {
             _ = try await submit(boardID: boardID, title: title, description: description, idempotencyKey: write.id)
         case let .comment(boardID, entryID, content, parentID):
             _ = try await comment(boardID: boardID, entryID: entryID, content: content, parentID: parentID, idempotencyKey: write.id)
-        case let .chatMessage(body):
-            // Where the chat screen would have put it: the open conversation, else the latest
-            // (writing reopens it), else a new one.
-            let conversations = try await chatConversations()
-            if let current = conversations.first(where: { $0.status == .open }) ?? conversations.first {
+        case let .chatMessage(body, conversationID):
+            // Back to the route it was first sent to, so the server can tell a repeat from a new
+            // message. A conversation closed before it arrived: a new one, as the chat screen does.
+            if let conversationID {
                 do {
-                    _ = try await sendChatMessage(conversationID: current.id, body: body, idempotencyKey: write.id)
+                    _ = try await sendChatMessage(conversationID: conversationID, body: body, idempotencyKey: write.id)
                     return
                 } catch FeeqdError.conversationClosed {}
             }

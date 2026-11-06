@@ -28,6 +28,9 @@ package final class ChatStore: ObservableObject {
 
     package let client: FeeqdClient
     private var lastMarkedRead: String?
+    /// The conversation the last send went to, `nil` when it was starting one: where a message
+    /// kept for later goes back to.
+    private var lastRoute: String?
     private var pendingWatch: AnyCancellable?
 
     package init(client: FeeqdClient) {
@@ -124,18 +127,20 @@ package final class ChatStore: ObservableObject {
                 lastError = wrapped
                 return false
             }
-            await client.keepForLater(PendingWrite(id: key, kind: .chatMessage(body: body)))
+            await client.keepForLater(PendingWrite(id: key, kind: .chatMessage(body: body, conversationID: lastRoute)))
             await loadPending()
             return true
         }
     }
 
     private func append(_ body: String, to conversationID: String, key: String) async throws {
+        lastRoute = conversationID
         let message = try await client.sendChatMessage(conversationID: conversationID, body: body, idempotencyKey: key)
         if !messages.contains(where: { $0.id == message.id }) { messages.append(message) }
     }
 
     private func start(with body: String, key: String) async throws {
+        lastRoute = nil
         let started = try await client.startConversation(message: body, idempotencyKey: key)
         // `200` with an open conversation this screen did not know about: the message was not
         // stored with it, so it goes in as a normal message, under a key of its own.
@@ -155,7 +160,7 @@ package final class ChatStore: ObservableObject {
 
     private func loadPending() async {
         pendingMessages = await client.pendingWrites().compactMap { write in
-            guard case let .chatMessage(body) = write.kind else { return nil }
+            guard case let .chatMessage(body, _) = write.kind else { return nil }
             return ChatMessage(
                 id: write.id, sender: .device, senderName: nil, kind: "text", body: body, createdAt: write.createdAt,
                 isPendingSend: true
