@@ -230,9 +230,18 @@ package final class BoardStore: ObservableObject {
 
     // MARK: Submitting
 
-    package func submit(title: String, description: String) async throws -> SubmitReceipt {
+    /// `nil` when it could not go out and was kept to be sent on its own later.
+    package func submit(title: String, description: String) async throws -> SubmitReceipt? {
         guard let board = boardID else { throw FeeqdError.noBoard }
-        return try await client.submit(boardID: board, title: title, description: description)
+        let key = UUID().uuidString
+        do {
+            return try await client.submit(boardID: board, title: title, description: description, idempotencyKey: key)
+        } catch {
+            let wrapped = FeeqdError.wrap(error)
+            guard await client.canKeepForLater(wrapped) else { throw error }
+            await client.keepForLater(PendingWrite(id: key, kind: .request(boardID: board, title: title, description: description)))
+            return nil
+        }
     }
 
     /// A `202` carries no id, so the list is the only place a new request can appear. The

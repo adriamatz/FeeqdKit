@@ -29,6 +29,7 @@ package enum StringKey: String, CaseIterable, Sendable {
     case commentTeam = "comment.team"
     case commentPinned = "comment.pinned"
     case commentPending = "comment.pending"
+    case sendPending = "send.pending"
     case translateSee = "translate.see"
     case translateOriginal = "translate.original"
     case submitCTA = "submit.cta"
@@ -40,6 +41,8 @@ package enum StringKey: String, CaseIterable, Sendable {
     case submitSimilar = "submit.similar"
     case submitSentTitle = "submit.sent.title"
     case submitSentMessage = "submit.sent.message"
+    case submitKeptTitle = "submit.kept.title"
+    case submitKeptMessage = "submit.kept.message"
     case submitDone = "submit.done"
     case submitAnonymousNotAllowed = "submit.anonymousNotAllowed"
     case submitQuotaExceeded = "submit.quotaExceeded"
@@ -149,6 +152,7 @@ package struct StringTable: Sendable {
             "comment.team": "Team",
             "comment.pinned": "Pinned",
             "comment.pending": "Waiting for the team to approve it.",
+            "send.pending": "Not sent yet. It will go out on its own.",
             "translate.see": "See translation",
             "translate.original": "See original",
             "submit.cta": "New request",
@@ -160,6 +164,8 @@ package struct StringTable: Sendable {
             "submit.similar": "Already asked",
             "submit.sent.title": "Sent",
             "submit.sent.message": "It will appear in the list once the team reviews it.",
+            "submit.kept.title": "Saved",
+            "submit.kept.message": "It couldn't go out just now. It will be sent on its own as soon as it can.",
             "submit.done": "Done",
             "submit.anonymousNotAllowed": "This board doesn't accept anonymous requests.",
             "submit.quotaExceeded": "The team can't take new requests right now. Try again later.",
@@ -222,6 +228,7 @@ package struct StringTable: Sendable {
             "comment.team": "Equipo",
             "comment.pinned": "Fijado",
             "comment.pending": "Pendiente de que el equipo lo apruebe.",
+            "send.pending": "Aún no se ha enviado. Se enviará solo.",
             "translate.see": "Ver traducción",
             "translate.original": "Ver original",
             "submit.cta": "Nueva sugerencia",
@@ -233,6 +240,8 @@ package struct StringTable: Sendable {
             "submit.similar": "Ya lo han pedido",
             "submit.sent.title": "Enviada",
             "submit.sent.message": "Aparecerá en la lista cuando el equipo la revise.",
+            "submit.kept.title": "Guardada",
+            "submit.kept.message": "Ahora no se ha podido enviar. Se enviará sola en cuanto se pueda.",
             "submit.done": "Hecho",
             "submit.anonymousNotAllowed": "Este tablero no acepta sugerencias anónimas.",
             "submit.quotaExceeded": "El equipo no puede recibir sugerencias nuevas ahora mismo. Inténtalo más tarde.",

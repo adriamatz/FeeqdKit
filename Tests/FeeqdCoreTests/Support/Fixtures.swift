@@ -23,6 +23,10 @@ final class StubURLProtocol: URLProtocol {
         var status: Int
         var headers: [String: String] = [:]
         var body = Data()
+        /// Set to fail the request before any answer, the way a dropped connection does.
+        var error: URLError.Code?
+
+        static func failure(_ code: URLError.Code) -> Response { Response(status: 0, error: code) }
 
         static func json(_ status: Int, _ body: Data, headers: [String: String] = [:]) -> Response {
             Response(status: status, headers: headers.merging(["Content-Type": "application/json"]) { $1 }, body: body)
@@ -33,10 +37,13 @@ final class StubURLProtocol: URLProtocol {
     // at a time, so the unchecked access is never concurrent.
     nonisolated(unsafe) static var responder: ((URLRequest) -> Response)?
     nonisolated(unsafe) static var requests: [URLRequest] = []
+    /// Every wait the client asked for between attempts, in order. Nobody really waits.
+    nonisolated(unsafe) static var waits: [TimeInterval] = []
 
     static func reset() {
         responder = nil
         requests = []
+        waits = []
     }
 
     static func session() -> URLSession {
@@ -55,6 +62,10 @@ final class StubURLProtocol: URLProtocol {
         }
         Self.requests.append(recorded)
         let response = Self.responder?(recorded) ?? Response(status: 500)
+        if let code = response.error {
+            client?.urlProtocol(self, didFailWithError: URLError(code))
+            return
+        }
         let http = HTTPURLResponse(url: request.url!, statusCode: response.status, httpVersion: "HTTP/1.1", headerFields: response.headers)!
         client?.urlProtocol(self, didReceive: http, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: response.body)
@@ -93,7 +104,9 @@ extension FeeqdClient {
                 gathererURL: URL(string: "http://gatherer.test")!
             ),
             session: StubURLProtocol.session(),
-            identity: identity
+            identity: identity,
+            retryPolicy: RetryPolicy(maxRetries: 4, baseDelay: 1, maxDelay: 8, jitter: { 1 }, sleep: { StubURLProtocol.waits.append($0) }),
+            outbox: Outbox(fileURL: nil)
         )
     }
 }

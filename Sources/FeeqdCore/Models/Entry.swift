@@ -124,6 +124,8 @@ package struct Comment: Decodable, Identifiable, Hashable, Sendable {
     package let reviewAppStoreID: String?
     /// Local only: a comment just written that the board holds for moderation.
     package var isPendingModeration: Bool
+    /// Local only: a comment that could not go out yet, kept to be sent on its own.
+    package var isPendingSend = false
 
     package init(
         id: String,
@@ -134,7 +136,8 @@ package struct Comment: Decodable, Identifiable, Hashable, Sendable {
         isPinned: Bool,
         createdAt: Date,
         reviewAppStoreID: String? = nil,
-        isPendingModeration: Bool = false
+        isPendingModeration: Bool = false,
+        isPendingSend: Bool = false
     ) {
         self.id = id
         self.parentID = parentID
@@ -145,6 +148,7 @@ package struct Comment: Decodable, Identifiable, Hashable, Sendable {
         self.createdAt = createdAt
         self.reviewAppStoreID = reviewAppStoreID
         self.isPendingModeration = isPendingModeration
+        self.isPendingSend = isPendingSend
     }
 
     enum CodingKeys: String, CodingKey {

@@ -20,22 +20,29 @@ package final class ChatStore: ObservableObject {
     @Published package private(set) var phase: Phase = .loading
     @Published package private(set) var conversation: ChatConversation?
     @Published package private(set) var messages: [ChatMessage] = []
+    /// Written here and kept to go out later. Apart from `messages`, whose last id is where the
+    /// next poll asks the server to continue from.
+    @Published package private(set) var pendingMessages: [ChatMessage] = []
     @Published package private(set) var isSending = false
     @Published package var lastError: FeeqdError?
 
     package let client: FeeqdClient
     private var lastMarkedRead: String?
+    private var pendingWatch: AnyCancellable?
 
     package init(client: FeeqdClient) {
         self.client = client
+        pendingWatch = NotificationCenter.default.publisher(for: FeeqdClient.pendingWritesChanged)
+            .sink { [weak self] _ in Task { await self?.pendingChanged() } }
     }
 
-    /// What the screen draws: only what people wrote.
-    package var visibleMessages: [ChatMessage] { messages.filter(\.isText) }
+    /// What the screen draws: only what people wrote, and then what is still to go out.
+    package var visibleMessages: [ChatMessage] { messages.filter(\.isText) + pendingMessages }
 
     package var isClosed: Bool { conversation?.status == .closed }
 
     package func load() async {
+        await loadPending()
         do {
             let conversations = try await client.chatConversations()
             // Newest first from the server; an open one always wins.
@@ -95,38 +102,45 @@ package final class ChatStore: ObservableObject {
         }
         isSending = true
         defer { isSending = false }
+        let key = UUID().uuidString
         do {
             if let conversation {
                 do {
-                    try await append(body, to: conversation.id)
+                    try await append(body, to: conversation.id, key: key)
                     // Writing to a closed conversation reopened it.
                     if conversation.status != .open { self.conversation = conversation.with(status: .open) }
                 } catch FeeqdError.conversationClosed {
                     // A backend that does not reopen, or another conversation already open for
                     // this device: start one, which hands back the open one if there is.
-                    try await start(with: body)
+                    try await start(with: body, key: key)
                 }
             } else {
-                try await start(with: body)
+                try await start(with: body, key: key)
             }
             return true
         } catch {
-            lastError = FeeqdError.wrap(error)
-            return false
+            let wrapped = FeeqdError.wrap(error)
+            guard await client.canKeepForLater(wrapped) else {
+                lastError = wrapped
+                return false
+            }
+            await client.keepForLater(PendingWrite(id: key, kind: .chatMessage(body: body)))
+            await loadPending()
+            return true
         }
     }
 
-    private func append(_ body: String, to conversationID: String) async throws {
-        let message = try await client.sendChatMessage(conversationID: conversationID, body: body)
+    private func append(_ body: String, to conversationID: String, key: String) async throws {
+        let message = try await client.sendChatMessage(conversationID: conversationID, body: body, idempotencyKey: key)
         if !messages.contains(where: { $0.id == message.id }) { messages.append(message) }
     }
 
-    private func start(with body: String) async throws {
-        let started = try await client.startConversation(message: body)
+    private func start(with body: String, key: String) async throws {
+        let started = try await client.startConversation(message: body, idempotencyKey: key)
         // `200` with an open conversation this screen did not know about: the message was not
-        // stored with it, so it goes in as a normal message.
+        // stored with it, so it goes in as a normal message, under a key of its own.
         if started.firstMessageID == nil {
-            _ = try await client.sendChatMessage(conversationID: started.id, body: body)
+            _ = try await client.sendChatMessage(conversationID: started.id, body: body, idempotencyKey: key + "-m")
         }
         // The message is stored by now. If reading the thread back fails, that is not a failed
         // send: reporting one would have the user send it twice. The next poll fills the thread.
@@ -137,6 +151,23 @@ package final class ChatStore: ObservableObject {
         )
         if let history { messages = history.items }
         phase = .loaded
+    }
+
+    private func loadPending() async {
+        pendingMessages = await client.pendingWrites().compactMap { write in
+            guard case let .chatMessage(body) = write.kind else { return nil }
+            return ChatMessage(
+                id: write.id, sender: .device, senderName: nil, kind: "text", body: body, createdAt: write.createdAt,
+                isPendingSend: true
+            )
+        }
+    }
+
+    /// One that was pending went out (or was dropped): the thread reads the server's copy.
+    private func pendingChanged() async {
+        let before = Set(pendingMessages.map(\.id))
+        await loadPending()
+        if !before.isSubset(of: Set(pendingMessages.map(\.id))) { await load() }
     }
 
     /// Marks up to the newest message, once per new message.

@@ -14,6 +14,8 @@ struct SubmitSheet: View {
     @State private var similar: [SimilarEntry] = []
     @State private var sending = false
     @State private var sent = false
+    /// It could not go out and was kept to be sent later.
+    @State private var kept = false
     @State private var error: FeeqdError?
 
     var body: some View {
@@ -81,12 +83,12 @@ struct SubmitSheet: View {
 
     private var sentView: some View {
         VStack(spacing: 12) {
-            Image(systemName: "checkmark.circle.fill")
+            Image(systemName: kept ? "clock.fill" : "checkmark.circle.fill")
                 .font(.system(size: 44))
                 .foregroundStyle(theme.primary)
-            Text(strings(.submitSentTitle))
+            Text(strings(kept ? .submitKeptTitle : .submitSentTitle))
                 .font(.title3.weight(.semibold))
-            Text(strings(.submitSentMessage))
+            Text(strings(kept ? .submitKeptMessage : .submitSentMessage))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(theme.textSecondary)
         }
@@ -101,9 +103,10 @@ struct SubmitSheet: View {
         error = nil
         defer { sending = false }
         do {
-            _ = try await store.submit(title: title.feeqdTrimmed, description: details.feeqdTrimmed)
+            let receipt = try await store.submit(title: title.feeqdTrimmed, description: details.feeqdTrimmed)
+            kept = receipt == nil
             sent = true
-            Task { await store.reloadAfterSubmit() }
+            if !kept { Task { await store.reloadAfterSubmit() } }
         } catch {
             self.error = FeeqdError.wrap(error)
         }

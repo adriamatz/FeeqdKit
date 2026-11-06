@@ -2,7 +2,7 @@ import Foundation
 import os
 
 package enum FeeqdCoreVersion {
-    package static let current = "0.4.8"
+    package static let current = "0.4.9"
 }
 
 package struct ClientConfiguration: Sendable {
@@ -47,6 +47,13 @@ package actor FeeqdClient {
     private let configuration: ClientConfiguration
     private let session: URLSession
     private let identity: DeviceIdentityProviding
+    private let retryPolicy: RetryPolicy
+    private let outbox: Outbox
+    /// Whether go-gatherer said it keeps a write's Idempotency-Key (`Feeqd-Idempotency: 1` on its
+    /// answers; the launch read is one). Until it has, a write that may have arrived is never
+    /// sent again: an older backend would store it twice.
+    private var serverDedupes = false
+    private var sendingPending = false
     private let decoder = JSONDecoder.feeqd
     private var identityToken: String?
     private var claimedID: String?
@@ -69,15 +76,27 @@ package actor FeeqdClient {
     private var entriesFull = false
     private var conversationsFull = false
 
-    /// A `429 rate_limited` asking for no more than this is waited out and sent once more;
-    /// a longer wait is the user's to decide.
+    /// A `429 rate_limited` asking for no more than this is waited out and sent again; a longer
+    /// wait is the user's to decide.
     package static let maxAutoRetryDelay: TimeInterval = 10
 
-    package init(configuration: ClientConfiguration, session: URLSession = .shared, identity: DeviceIdentityProviding) {
+    package init(
+        configuration: ClientConfiguration,
+        session: URLSession = .shared,
+        identity: DeviceIdentityProviding,
+        retryPolicy: RetryPolicy = .standard,
+        outbox: Outbox = .onDisk
+    ) {
         self.configuration = configuration
         self.session = session
         self.identity = identity
+        self.retryPolicy = retryPolicy
+        self.outbox = outbox
     }
+
+    /// Posted on the main actor when a write is kept for later or a kept one went out or was
+    /// dropped: a screen showing it as "not sent yet" reloads.
+    package static let pendingWritesChanged = Notification.Name("com.feeqd.feeqdkit.pendingWritesChanged")
 
     package func setIdentityToken(_ token: String?) {
         identityToken = token
@@ -100,6 +119,8 @@ package actor FeeqdClient {
         manualPayment = nil
         storePayment = nil
         paymentGeneration += 1
+        // What they wrote and could not send goes too: it would go out as the next person.
+        await outbox.clear()
         await identity.reset()
     }
 
@@ -230,24 +251,28 @@ package actor FeeqdClient {
     package func vote(boardID: String, entryID: String) async throws -> VoteResult {
         let (data, _) = try await send(
             "POST", .gatherer, "/sdk/boards/\(boardID)/entries/\(entryID)/vote",
-            body: Data("{}".utf8), credential: .keyAndDevice, isUserAction: true
+            body: Data("{}".utf8), credential: .keyAndDevice, isUserAction: true, safety: .idempotent
         )
         return try decode(VoteResult.self, data)
     }
 
     package func retractVote(boardID: String, entryID: String) async throws -> VoteResult {
         let (data, _) = try await send(
-            "DELETE", .gatherer, "/sdk/boards/\(boardID)/entries/\(entryID)/vote", credential: .keyAndDevice, isUserAction: true
+            "DELETE", .gatherer, "/sdk/boards/\(boardID)/entries/\(entryID)/vote", credential: .keyAndDevice, isUserAction: true,
+            safety: .idempotent
         )
         return try decode(VoteResult.self, data)
     }
 
-    package func comment(boardID: String, entryID: String, content: String, parentID: String? = nil) async throws -> CreatedComment {
+    package func comment(
+        boardID: String, entryID: String, content: String, parentID: String? = nil, idempotencyKey: String = UUID().uuidString
+    ) async throws -> CreatedComment {
         var body: [String: Any] = ["content": content]
         if let parentID { body["parent_id"] = parentID }
         let (data, _) = try await send(
             "POST", .gatherer, "/sdk/boards/\(boardID)/entries/\(entryID)/comments",
-            body: try JSONSerialization.data(withJSONObject: body), credential: .keyAndDevice, isUserAction: true
+            body: try JSONSerialization.data(withJSONObject: body), credential: .keyAndDevice, isUserAction: true,
+            idempotencyKey: idempotencyKey
         )
         return try decode(CreatedComment.self, data)
     }
@@ -265,12 +290,15 @@ package actor FeeqdClient {
     /// goes the way it always did, through the public route, as an anonymous one. Any other 404
     /// (`board_not_found`: a board outside the key) is the answer, and is thrown: retrying it on
     /// the public route would get round what the key allows.
-    package func submit(boardID: String, title: String, description: String) async throws -> SubmitReceipt {
+    package func submit(
+        boardID: String, title: String, description: String, idempotencyKey: String = UUID().uuidString
+    ) async throws -> SubmitReceipt {
         do {
             let body = ["title": title, "description": description]
             let (data, _) = try await send(
                 "POST", .gatherer, "/sdk/boards/\(boardID)/entries",
-                body: try JSONSerialization.data(withJSONObject: body), credential: .keyAndDevice, isUserAction: true
+                body: try JSONSerialization.data(withJSONObject: body), credential: .keyAndDevice, isUserAction: true,
+                idempotencyKey: idempotencyKey
             )
             return try decode(SubmitReceipt.self, data)
         } catch FeeqdError.quotaExceeded {
@@ -314,11 +342,12 @@ package actor FeeqdClient {
     /// Opens a conversation with its first message. If the device already has one open, the
     /// server hands that one back untouched — and the message is not added to it, so the
     /// caller sends it separately (`firstMessageID` is `nil` in that case).
-    package func startConversation(message: String) async throws -> StartedConversation {
+    package func startConversation(message: String, idempotencyKey: String = UUID().uuidString) async throws -> StartedConversation {
         do {
             let (data, _) = try await send(
                 "POST", .gatherer, "/sdk/chat/conversations",
-                body: try JSONSerialization.data(withJSONObject: ["message": message]), credential: .keyAndDevice, isUserAction: true
+                body: try JSONSerialization.data(withJSONObject: ["message": message]), credential: .keyAndDevice, isUserAction: true,
+                idempotencyKey: idempotencyKey
             )
             return try decode(StartedConversation.self, data)
         } catch FeeqdError.quotaExceeded {
@@ -327,25 +356,107 @@ package actor FeeqdClient {
         }
     }
 
-    package func sendChatMessage(conversationID: String, body: String) async throws -> ChatMessage {
+    package func sendChatMessage(conversationID: String, body: String, idempotencyKey: String = UUID().uuidString) async throws -> ChatMessage {
         let (data, _) = try await send(
             "POST", .gatherer, "/sdk/chat/conversations/\(conversationID)/messages",
-            body: try JSONSerialization.data(withJSONObject: ["body": body]), credential: .keyAndDevice, isUserAction: true
+            body: try JSONSerialization.data(withJSONObject: ["body": body]), credential: .keyAndDevice, isUserAction: true,
+            idempotencyKey: idempotencyKey
         )
         return try decode(ChatMessage.self, data)
     }
 
     package func closeConversation(conversationID: String) async throws {
         _ = try await send(
-            "POST", .gatherer, "/sdk/chat/conversations/\(conversationID)/close", body: Data("{}".utf8), credential: .keyAndDevice
+            "POST", .gatherer, "/sdk/chat/conversations/\(conversationID)/close", body: Data("{}".utf8), credential: .keyAndDevice,
+            safety: .idempotent
         )
     }
 
     package func markChatRead(conversationID: String, lastReadID: String) async throws {
         _ = try await send(
             "POST", .gatherer, "/sdk/chat/conversations/\(conversationID)/read",
-            body: try JSONSerialization.data(withJSONObject: ["last_read_id": lastReadID]), credential: .keyAndDevice
+            body: try JSONSerialization.data(withJSONObject: ["last_read_id": lastReadID]), credential: .keyAndDevice,
+            safety: .idempotent
         )
+    }
+
+    // MARK: Pending writes
+
+    /// Whether a write that failed this way can be kept and sent later without risk of storing
+    /// it twice: it surely never arrived, or the server would recognise it by its key.
+    package func canKeepForLater(_ error: FeeqdError) -> Bool {
+        switch error {
+        case .offline, .rateLimited: return true
+        case let .server(status, code, _):
+            if status == 502 || status == 503 || code == "idempotency_in_progress" { return true }
+            return serverDedupes && status >= 500
+        case .transport: return serverDedupes
+        default: return false
+        }
+    }
+
+    package func keepForLater(_ write: PendingWrite) async {
+        await outbox.add(write)
+        await Self.announcePendingChange()
+    }
+
+    package func pendingWrites() async -> [PendingWrite] {
+        await outbox.all()
+    }
+
+    /// Sends what was kept, oldest first. Stops at the first that still can't go out (the
+    /// connection is likely still down); drops one the server refuses or that is too old.
+    package func sendPendingWrites() async {
+        guard !sendingPending else { return }
+        sendingPending = true
+        defer { sendingPending = false }
+        var changed = false
+        for write in await outbox.all() {
+            if write.isExpired() {
+                await outbox.remove(id: write.id)
+                changed = true
+                continue
+            }
+            do {
+                try await deliver(write)
+            } catch is CancellationError {
+                break
+            } catch {
+                let failure = FeeqdError.wrap(error)
+                if canKeepForLater(failure) { break }
+            }
+            await outbox.remove(id: write.id)
+            changed = true
+        }
+        if changed { await Self.announcePendingChange() }
+    }
+
+    private func deliver(_ write: PendingWrite) async throws {
+        switch write.kind {
+        case let .request(boardID, title, description):
+            _ = try await submit(boardID: boardID, title: title, description: description, idempotencyKey: write.id)
+        case let .comment(boardID, entryID, content, parentID):
+            _ = try await comment(boardID: boardID, entryID: entryID, content: content, parentID: parentID, idempotencyKey: write.id)
+        case let .chatMessage(body):
+            // Where the chat screen would have put it: the open conversation, else the latest
+            // (writing reopens it), else a new one.
+            let conversations = try await chatConversations()
+            if let current = conversations.first(where: { $0.status == .open }) ?? conversations.first {
+                do {
+                    _ = try await sendChatMessage(conversationID: current.id, body: body, idempotencyKey: write.id)
+                    return
+                } catch FeeqdError.conversationClosed {}
+            }
+            let started = try await startConversation(message: body, idempotencyKey: write.id)
+            if started.firstMessageID == nil {
+                _ = try await sendChatMessage(conversationID: started.id, body: body, idempotencyKey: write.id + "-m")
+            }
+        }
+    }
+
+    @MainActor
+    private static func announcePendingChange() {
+        NotificationCenter.default.post(name: pendingWritesChanged, object: nil)
     }
 
     // MARK: Plumbing
@@ -360,7 +471,8 @@ package actor FeeqdClient {
         isUserAction: Bool = false,
         headers: [String: String] = [:],
         acceptNotModified: Bool = false,
-        isRetry: Bool = false
+        safety: RepeatSafety? = nil,
+        idempotencyKey: String? = nil
     ) async throws -> (Data, HTTPURLResponse) {
         let base = service == .reader ? configuration.readerURL : configuration.gathererURL
         guard var components = URLComponents(url: base.appendingPathComponent(path), resolvingAgainstBaseURL: false) else {
@@ -408,30 +520,55 @@ package actor FeeqdClient {
             request.setValue(info, forHTTPHeaderField: "X-Feeqd-Device-Info")
         }
         for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+        if let idempotencyKey { request.setValue(idempotencyKey, forHTTPHeaderField: "Idempotency-Key") }
 
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
-            // A cancelled request is not a failed one: it stays recognisable to the stores.
-            if FeeqdError.isCancellation(error) { throw CancellationError() }
-            throw FeeqdError.wrap(error)
+        let safety = safety ?? (method == "GET" ? .read : .once)
+        var retry = 0
+        while true {
+            let error: FeeqdError
+            do {
+                let (data, response) = try await session.data(for: request)
+                guard let http = response as? HTTPURLResponse else { throw FeeqdError.transport("No HTTP response") }
+                if service == .gatherer { serverDedupes = http.value(forHTTPHeaderField: "Feeqd-Idempotency") == "1" }
+                if (200..<300).contains(http.statusCode) || (acceptNotModified && http.statusCode == 304) {
+                    return (data, http)
+                }
+                error = FeeqdError.from(status: http.statusCode, data: data, retryAfter: http.value(forHTTPHeaderField: "Retry-After"))
+            } catch let failure {
+                // A cancelled request is not a failed one: it stays recognisable to the stores.
+                if FeeqdError.isCancellation(failure) { throw CancellationError() }
+                error = FeeqdError.wrap(failure)
+            }
+            // A write the server recognises by its key is as safe to repeat as a vote.
+            let safety = safety == .once && idempotencyKey != nil && serverDedupes ? .idempotent : safety
+            guard let wait = waitBeforeRetry(error, safety: safety, retry: retry) else { throw error }
+            try await retryPolicy.sleep(wait)
+            retry += 1
         }
-        guard let http = response as? HTTPURLResponse else { throw FeeqdError.transport("No HTTP response") }
-        if (200..<300).contains(http.statusCode) || (acceptNotModified && http.statusCode == 304) {
-            return (data, http)
-        }
-        let error = FeeqdError.from(status: http.statusCode, data: data, retryAfter: http.value(forHTTPHeaderField: "Retry-After"))
+    }
+
+    /// How long to wait before sending a failed request again, or `nil` to give up.
+    private func waitBeforeRetry(_ error: FeeqdError, safety: RepeatSafety, retry: Int) -> TimeInterval? {
+        guard retry < retryPolicy.maxRetries else { return nil }
         // A 429 was never processed, so sending it again cannot do anything twice.
-        if !isRetry, case let .rateLimited(after?) = error, after <= Self.maxAutoRetryDelay {
-            try await Task.sleep(nanoseconds: UInt64(max(after, 0) * 1_000_000_000))
-            return try await send(
-                method, service, path, query: query, body: body, credential: credential, isUserAction: isUserAction,
-                headers: headers, acceptNotModified: acceptNotModified, isRetry: true
-            )
+        if case let .rateLimited(after) = error {
+            guard let after else { return safety == .read ? nil : retryPolicy.delay(retry) }
+            return after <= Self.maxAutoRetryDelay ? after : nil
         }
-        throw error
+        // The same write still running on the server: its answer will be the one to keep.
+        if case .server(409, "idempotency_in_progress", _) = error, safety != .read { return retryPolicy.delay(retry) }
+        switch safety {
+        case .read:
+            return nil
+        case .idempotent:
+            return error.isRetryable ? retryPolicy.delay(retry) : nil
+        case .once:
+            // A 502 or 503 comes from a gateway with no server behind it. A timeout, a dropped
+            // connection, a 500 or a 504 may come after the server stored it.
+            if error == .offline { return retryPolicy.delay(retry) }
+            if case let .server(status, _, _) = error, status == 502 || status == 503 { return retryPolicy.delay(retry) }
+            return nil
+        }
     }
 
     private func decode<T: Decodable>(_ type: T.Type, _ data: Data) throws -> T {

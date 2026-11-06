@@ -217,7 +217,11 @@ struct CommentRow: View {
             if let appStoreID = comment.reviewAppStoreID {
                 ReviewCard(appStoreID: appStoreID)
             }
-            if comment.isPendingModeration {
+            if comment.isPendingSend {
+                PendingSendNote(text: strings(.sendPending))
+                    .font(.caption)
+                    .foregroundStyle(theme.textSecondary)
+            } else if comment.isPendingModeration {
                 Text(strings(.commentPending))
                     .font(.caption)
                     .foregroundStyle(theme.textSecondary)
@@ -339,5 +343,17 @@ struct ReviewCard: View {
             RoundedRectangle(cornerRadius: theme.cornerRadius, style: .continuous)
                 .fill(theme.textSecondary.opacity(0.14))
         )
+    }
+}
+
+/// "Not sent yet" under something the user wrote that is waiting to go out.
+struct PendingSendNote: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "clock")
+            Text(text)
+        }
     }
 }

@@ -22,6 +22,8 @@ package enum FeeqdError: Error, Equatable, Sendable {
     /// it, or the device has since opened another one.
     case conversationClosed
     case rateLimited(retryAfter: TimeInterval?)
+    /// The request never reached the server: no connection, or no route to it.
+    case offline
     case server(status: Int, code: String?, message: String?)
     case transport(String)
     case decoding(String)
@@ -35,7 +37,7 @@ package enum FeeqdError: Error, Equatable, Sendable {
 
     package var isRetryable: Bool {
         switch self {
-        case .rateLimited, .transport: return true
+        case .rateLimited, .offline, .transport: return true
         case let .server(status, _, _): return status >= 500
         default: return false
         }
@@ -50,7 +52,9 @@ package enum FeeqdError: Error, Equatable, Sendable {
 
     package static func wrap(_ error: Error) -> FeeqdError {
         if let error = error as? FeeqdError { return error }
-        if let error = error as? URLError { return .transport(error.localizedDescription) }
+        if let error = error as? URLError {
+            return error.code.neverSent ? .offline : .transport(error.localizedDescription)
+        }
         if error is DecodingError { return .decoding(String(describing: error)) }
         return .transport(String(describing: error))
     }

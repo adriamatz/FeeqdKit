@@ -17,6 +17,8 @@ package final class CommentsStore: ObservableObject {
 
     @Published package private(set) var phase: Phase = .loading
     @Published package private(set) var comments: [Comment] = []
+    /// Written here and kept to go out later: shown in the thread, marked as not sent yet.
+    @Published package private(set) var pendingComments: [Comment] = []
     @Published package private(set) var isSending = false
     /// Whether the thread takes comments. A request in review on a backend that cannot show its
     /// author the thread does not: writing there would go nowhere anyone reads.
@@ -26,26 +28,33 @@ package final class CommentsStore: ObservableObject {
     private let client: FeeqdClient
     private let boardID: String
     private let entryID: String
+    private var ownInReview = false
+    private var pendingWatch: AnyCancellable?
 
     package init(client: FeeqdClient, boardID: String, entryID: String) {
         self.client = client
         self.boardID = boardID
         self.entryID = entryID
+        pendingWatch = NotificationCenter.default.publisher(for: FeeqdClient.pendingWritesChanged)
+            .sink { [weak self] _ in Task { await self?.pendingChanged() } }
     }
 
     /// Pinned roots first — the team's answer should read as the answer — then oldest first.
     package var threads: [Thread] {
-        let roots = comments
+        let all = comments + pendingComments
+        let roots = all
             .filter { $0.parentID == nil }
             .sorted { ($0.isPinned ? 0 : 1, $0.createdAt) < ($1.isPinned ? 0 : 1, $1.createdAt) }
         return roots.map { root in
-            Thread(root: root, replies: comments.filter { $0.parentID == root.id }.sorted { $0.createdAt < $1.createdAt })
+            Thread(root: root, replies: all.filter { $0.parentID == root.id }.sorted { $0.createdAt < $1.createdAt })
         }
     }
 
     /// `ownInReview` is a request this device sent that the public cannot see yet: its thread is
     /// the author's and the team's, read through the author's own route.
     package func load(ownInReview: Bool = false) async {
+        self.ownInReview = ownInReview
+        await loadPending()
         do {
             comments = try await ownInReview
                 ? client.myComments(boardID: boardID, entryID: entryID, page: 1, pageSize: 100).items
@@ -76,8 +85,11 @@ package final class CommentsStore: ObservableObject {
         guard !text.isEmpty, !isSending else { return false }
         isSending = true
         defer { isSending = false }
+        let key = UUID().uuidString
         do {
-            let created = try await client.comment(boardID: boardID, entryID: entryID, content: text, parentID: parentID)
+            let created = try await client.comment(
+                boardID: boardID, entryID: entryID, content: text, parentID: parentID, idempotencyKey: key
+            )
             comments.append(
                 Comment(
                     id: created.id,
@@ -93,8 +105,34 @@ package final class CommentsStore: ObservableObject {
             phase = .loaded
             return true
         } catch {
-            lastError = FeeqdError.wrap(error)
-            return false
+            let wrapped = FeeqdError.wrap(error)
+            guard await client.canKeepForLater(wrapped) else {
+                lastError = wrapped
+                return false
+            }
+            // Kept, and the draft cleared: sending it again from the field would post it twice.
+            let write = PendingWrite(id: key, kind: .comment(boardID: boardID, entryID: entryID, content: text, parentID: parentID))
+            await client.keepForLater(write)
+            await loadPending()
+            phase = .loaded
+            return true
         }
+    }
+
+    private func loadPending() async {
+        pendingComments = await client.pendingWrites().compactMap { write in
+            guard case let .comment(board, entry, content, parentID) = write.kind, board == boardID, entry == entryID else { return nil }
+            return Comment(
+                id: write.id, parentID: parentID, content: content, authorName: nil, isTeamMember: false, isPinned: false,
+                createdAt: write.createdAt, isPendingSend: true
+            )
+        }
+    }
+
+    /// One that was pending went out (or was dropped): the thread reads the server's copy.
+    private func pendingChanged() async {
+        let before = Set(pendingComments.map(\.id))
+        await loadPending()
+        if !before.isSubset(of: Set(pendingComments.map(\.id))) { await load(ownInReview: ownInReview) }
     }
 }

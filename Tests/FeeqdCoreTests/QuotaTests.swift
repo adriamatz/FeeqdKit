@@ -101,17 +101,17 @@ final class QuotaTests: XCTestCase {
         XCTAssertEqual(count("/sdk/boards/B1/entries"), 2, "sent once more after the wait")
     }
 
-    func testARateLimitIsRetriedOnlyOnce() async throws {
+    func testARateLimitIsRetriedUntilTheRetriesRunOut() async throws {
         StubURLProtocol.responder = { _ in
             .json(429, Data(#"{"error":"rate_limited","retry_after":0}"#.utf8), headers: ["Retry-After": "0"])
         }
         do {
             _ = try await FeeqdClient.stubbed().submit(boardID: "B1", title: "Dark mode", description: "")
-            XCTFail("still limited after the retry")
+            XCTFail("still limited after the retries")
         } catch {
             XCTAssertEqual(error as? FeeqdError, .rateLimited(retryAfter: 0))
         }
-        XCTAssertEqual(count("/sdk/boards/B1/entries"), 2)
+        XCTAssertEqual(count("/sdk/boards/B1/entries"), 5)
     }
 
     func testALongRateLimitIsLeftToTheUser() async throws {

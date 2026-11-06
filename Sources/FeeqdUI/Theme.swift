@@ -231,10 +231,15 @@ extension View {
     /// The search out of the way: browsing is what the screen is for. On iOS 26 a magnifier at
     /// the top trailing corner, next to the add button, when the bar has room for it (iOS would put
     /// it at the bottom); otherwise a field that hides once the list scrolls.
+    ///
+    /// iOS 27 reopens a minimized search right after its close button is tapped when another
+    /// item shares the trailing corner, so there the field sits under the title instead.
     @ViewBuilder
     func feeqdSearchable(text: Binding<String>, prompt: String, asButton: Bool) -> some View {
         #if os(iOS)
-        if #available(iOS 26, *), asButton {
+        if #available(iOS 27, *), asButton {
+            searchable(text: text, placement: .navigationBarDrawer(displayMode: .always), prompt: prompt)
+        } else if #available(iOS 26, *), asButton {
             // A magnifier in the bar that opens the field.
             searchable(text: text, prompt: prompt)
                 .searchToolbarBehavior(.minimize)

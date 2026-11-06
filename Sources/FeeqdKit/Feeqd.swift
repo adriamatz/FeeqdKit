@@ -73,7 +73,11 @@ public enum Feeqd {
             translation: configuration.translation.mode
         )
         state.withLock { $0 = context }
-        Task { await client.announceLaunch(preferredBoardID: configuration.boardID) }
+        Task {
+            // The launch read first: it tells the client whether the server dedupes repeats.
+            await client.announceLaunch(preferredBoardID: configuration.boardID)
+            PendingWritesWatcher.start(client: client)
+        }
         if configuration.collectPurchases { PurchaseWatcher.start(client: client) }
     }
 

@@ -70,12 +70,14 @@ package struct ChatMessage: Decodable, Equatable, Sendable, Identifiable {
     /// draws a card with a button to the store's review page under it. Only the team's, and
     /// only an id made of digits, so the button never opens anything else.
     package let reviewAppStoreID: String?
+    /// Local only: a message that could not go out yet, kept to be sent on its own.
+    package var isPendingSend = false
 
     package var isText: Bool { kind == "text" && !body.isEmpty }
 
     package init(
         id: String, sender: Sender, senderName: String?, kind: String, body: String, createdAt: Date?,
-        reviewAppStoreID: String? = nil
+        reviewAppStoreID: String? = nil, isPendingSend: Bool = false
     ) {
         self.id = id
         self.sender = sender
@@ -84,6 +86,7 @@ package struct ChatMessage: Decodable, Equatable, Sendable, Identifiable {
         self.body = body
         self.createdAt = createdAt
         self.reviewAppStoreID = reviewAppStoreID
+        self.isPendingSend = isPendingSend
     }
 
     enum CodingKeys: String, CodingKey {

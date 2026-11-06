@@ -2,7 +2,7 @@
 
 In-app feedback for iOS: requests with votes, comments, a way to ask for something new, and a private chat with your team, backed by [Feeqd](https://feeqd.com). SwiftUI, iOS 16+, no dependencies.
 
-> **0.4.8.** Talks to production out of the box. You need a Feeqd plan that includes the iOS SDK, and the publishable key from **App & SDK** in the dashboard.
+> **0.4.9.** Talks to production out of the box. You need a Feeqd plan that includes the iOS SDK, and the publishable key from **App & SDK** in the dashboard.
 
 ## Installation
 
@@ -11,7 +11,7 @@ In Xcode: **File → Add Package Dependencies…** and paste `https://github.com
 Or in `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/adriamatz/FeeqdKit", from: "0.4.8")
+.package(url: "https://github.com/adriamatz/FeeqdKit", from: "0.4.9")
 ```
 
 and add `FeeqdKit` to your target's dependencies.

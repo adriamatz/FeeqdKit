@@ -147,7 +147,11 @@ struct ChatBubble: View {
                             .fill(isMine ? theme.primary : theme.textSecondary.opacity(0.14))
                     )
                     .textSelection(.enabled)
-                if let date = message.createdAt {
+                if message.isPendingSend {
+                    PendingSendNote(text: strings(.sendPending))
+                        .font(.caption2)
+                        .foregroundStyle(theme.textSecondary)
+                } else if let date = message.createdAt {
                     Text(date, style: .time)
                         .font(.caption2)
                         .foregroundStyle(theme.textSecondary)
