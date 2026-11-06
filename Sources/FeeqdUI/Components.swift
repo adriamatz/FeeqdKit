@@ -134,44 +134,334 @@ struct EntryRow: View {
     let status: RemoteStatus?
     let voted: Bool
     let behaviour: SDKConfig.Behaviour
+    /// Off under a status's own header, which already says it.
+    var showsStatus = true
+    let onVote: () -> Void
+
+    @Environment(\.feeqdTheme) private var theme
+
+    /// The compact row, the default: the title and two lines of what was asked, where it stands
+    /// and how much it was talked about; the vote on the right, where the thumb is.
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(entry.title)
+                    .font(.headline)
+                    .foregroundStyle(theme.textPrimary)
+                    .lineLimit(2)
+                if let details = entry.details, !details.isEmpty {
+                    Text(details)
+                        .font(.subheadline)
+                        .foregroundStyle(theme.textSecondary)
+                        .lineLimit(2)
+                }
+                if showsStatus || (behaviour.showCommentCount && entry.commentCount > 0) {
+                    HStack(spacing: 10) {
+                        if showsStatus { StatusChip(status: status, slug: entry.state) }
+                        if behaviour.showCommentCount && entry.commentCount > 0 {
+                            CommentCount(count: entry.commentCount)
+                        }
+                    }
+                    .padding(.top, 1)
+                }
+            }
+            Spacer(minLength: 0)
+            VotePill(count: entry.voteCount, voted: voted, showsCount: behaviour.showVoteCount, action: onVote)
+                // Nobody else sees it, so nobody can vote on it yet, the author included.
+                .disabled(entry.onlyYou)
+        }
+        .padding(.vertical, 8)
+    }
+}
+
+/// A request as a card: where it stands on top, then what was asked, then the talk and the vote.
+struct EntryCard: View {
+    let entry: Entry
+    let status: RemoteStatus?
+    let voted: Bool
+    let behaviour: SDKConfig.Behaviour
+    /// Off under a status's own header, which already says it.
+    var showsStatus = true
     let onVote: () -> Void
 
     @Environment(\.feeqdStrings) private var strings
     @Environment(\.feeqdTheme) private var theme
 
-    /// Votes, then the title, and under it where it stands and how much it was talked about.
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            VoteButton(count: entry.voteCount, voted: voted, showsCount: behaviour.showVoteCount, size: 44, action: onVote)
-                // Nobody else sees it, so nobody can vote on it yet, the author included.
-                .disabled(entry.onlyYou)
-            VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 8) {
+            if showsStatus { StatusChip(status: status, slug: entry.state) }
+            Text(entry.title)
+                .font(.headline)
+                .foregroundStyle(theme.textPrimary)
+                .lineLimit(3)
+            if let details = entry.details, !details.isEmpty {
+                Text(details)
+                    .font(.subheadline)
+                    .foregroundStyle(theme.textSecondary)
+                    .lineLimit(2)
+            }
+            HStack {
+                if behaviour.showCommentCount {
+                    CommentCount(count: entry.commentCount, showsLabel: true)
+                }
+                Spacer(minLength: 0)
+                VoteCapsule(count: entry.voteCount, voted: voted, showsCount: behaviour.showVoteCount, action: onVote)
+                    .disabled(entry.onlyYou)
+            }
+            .padding(.top, 2)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.surface, in: RoundedRectangle(cornerRadius: theme.cornerRadius + 4, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: theme.cornerRadius + 4, style: .continuous)
+                .strokeBorder(theme.textSecondary.opacity(0.15))
+        )
+    }
+}
+
+/// The most voted request, large, in the accent colour: the board's headline.
+struct SpotlightCard: View {
+    let entry: Entry
+    let status: RemoteStatus?
+    let voted: Bool
+    let behaviour: SDKConfig.Behaviour
+    let onVote: () -> Void
+
+    @Environment(\.feeqdStrings) private var strings
+    @Environment(\.feeqdTheme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(strings(.listTop).uppercased())
+                    .font(.caption.weight(.bold))
+                    .opacity(0.85)
+                Spacer(minLength: 0)
+                Text(statusLabel(status, slug: entry.state))
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.white.opacity(0.18), in: Capsule())
+            }
+            Text(entry.title)
+                .font(.title3.weight(.bold))
+                .lineLimit(3)
+            if let details = entry.details, !details.isEmpty {
+                Text(details)
+                    .font(.subheadline)
+                    .opacity(0.9)
+                    .lineLimit(2)
+            }
+            HStack {
+                if behaviour.showCommentCount {
+                    CommentCount(count: entry.commentCount, showsLabel: true, color: Color.white.opacity(0.9))
+                }
+                Spacer(minLength: 0)
+                VoteCapsule(count: entry.voteCount, voted: voted, showsCount: behaviour.showVoteCount, inverted: true, action: onVote)
+                    .disabled(entry.onlyYou)
+            }
+            .padding(.top, 4)
+        }
+        .foregroundStyle(Color.white)
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.primary, in: RoundedRectangle(cornerRadius: theme.cornerRadius + 6, style: .continuous))
+    }
+}
+
+/// A row under the spotlight: its place in the ranking, the title, where it stands, the vote.
+struct RankedRow: View {
+    let rank: Int
+    let entry: Entry
+    let status: RemoteStatus?
+    let voted: Bool
+    let behaviour: SDKConfig.Behaviour
+    let onVote: () -> Void
+
+    @Environment(\.feeqdTheme) private var theme
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("\(rank)")
+                .font(.subheadline.weight(.bold))
+                .monospacedDigit()
+                .foregroundStyle(theme.textSecondary)
+                .frame(minWidth: 22)
+            VStack(alignment: .leading, spacing: 4) {
                 Text(entry.title)
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(theme.textPrimary)
                     .lineLimit(2)
-                HStack(spacing: 10) {
-                    HStack(spacing: 5) {
-                        StatusMark(status: status, fallbackSlug: entry.state)
-                        Text(status?.label ?? entry.state.replacingOccurrences(of: "_", with: " ").capitalized)
+                HStack(spacing: 8) {
+                    HStack(spacing: 4) {
+                        StatusMark(status: status, fallbackSlug: entry.state, size: 10)
+                        Text(statusLabel(status, slug: entry.state))
                     }
+                    .foregroundStyle(theme.color(for: status, slug: entry.state))
                     if behaviour.showCommentCount && entry.commentCount > 0 {
-                        HStack(spacing: 3) {
-                            Image(systemName: "bubble.left")
-                            Text("\(entry.commentCount)").monospacedDigit()
-                        }
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("\(entry.commentCount) \(strings(.commentsTitle))")
+                        CommentCount(count: entry.commentCount)
                     }
                 }
-                .font(.subheadline)
-                .foregroundStyle(theme.textSecondary)
-                .lineLimit(1)
+                .font(.caption.weight(.semibold))
             }
             Spacer(minLength: 0)
+            VoteCapsule(count: entry.voteCount, voted: voted, showsCount: behaviour.showVoteCount, action: onVote)
+                .disabled(entry.onlyYou)
         }
         .padding(.vertical, 6)
     }
+}
+
+/// "By status": the status's name and how many are in it, over its requests.
+struct StatusGroupHeader: View {
+    let status: RemoteStatus?
+    let slug: String
+    let count: Int
+
+    @Environment(\.feeqdTheme) private var theme
+
+    var body: some View {
+        let color = theme.color(for: status, slug: slug)
+        HStack(spacing: 8) {
+            Circle().fill(color).frame(width: 8, height: 8)
+            Text(statusLabel(status, slug: slug).uppercased())
+                .foregroundStyle(color)
+            Text("\(count)")
+                .foregroundStyle(theme.textSecondary)
+        }
+        .font(.footnote.weight(.bold))
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// Where a request stands, as a small chip in its status colour.
+struct StatusChip: View {
+    let status: RemoteStatus?
+    let slug: String
+
+    @Environment(\.feeqdTheme) private var theme
+
+    var body: some View {
+        let color = theme.color(for: status, slug: slug)
+        HStack(spacing: 5) {
+            StatusMark(status: status, fallbackSlug: slug, size: 10)
+            Text(statusLabel(status, slug: slug))
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(color)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(color.opacity(0.14), in: Capsule())
+        .lineLimit(1)
+    }
+}
+
+/// How many replies a request has; with `showsLabel`, the word too.
+struct CommentCount: View {
+    let count: Int
+    var showsLabel = false
+    /// The text colour; the theme's secondary when unset.
+    var color: Color?
+
+    @Environment(\.feeqdStrings) private var strings
+    @Environment(\.feeqdTheme) private var theme
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "bubble.left")
+            Text(showsLabel ? "\(count) \(strings(.commentsTitle).lowercased())" : "\(count)").monospacedDigit()
+        }
+        .font(.caption)
+        .foregroundStyle(color ?? theme.textSecondary)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(count) \(strings(.commentsTitle))")
+    }
+}
+
+/// The compact row's vote: a tall pill on the right, filled once voted.
+struct VotePill: View {
+    let count: Int
+    let voted: Bool
+    let showsCount: Bool
+    let action: () -> Void
+
+    @Environment(\.feeqdStrings) private var strings
+    @Environment(\.feeqdTheme) private var theme
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Image(systemName: "chevron.up").font(.caption.weight(.bold))
+                if showsCount {
+                    Text("\(count)").font(.subheadline.weight(.bold)).monospacedDigit()
+                }
+            }
+            .frame(width: 50)
+            .padding(.vertical, 8)
+            .foregroundStyle(voted ? Color.white : theme.textPrimary)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(voted ? theme.voteActive : theme.surface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(voted ? Color.clear : theme.textSecondary.opacity(0.25))
+            )
+        }
+        // Borderless keeps the tap on the button instead of the row's navigation link.
+        .buttonStyle(.borderless)
+        .accessibilityLabel(voted ? strings(.voteVoted) : strings(.voteUpvote))
+        .accessibilityValue("\(count)")
+        .accessibilityAddTraits(voted ? .isSelected : [])
+    }
+}
+
+/// The vote as a short capsule: cards, the spotlight (`inverted`, on the accent) and the ranking.
+struct VoteCapsule: View {
+    let count: Int
+    let voted: Bool
+    let showsCount: Bool
+    var inverted = false
+    let action: () -> Void
+
+    @Environment(\.feeqdStrings) private var strings
+    @Environment(\.feeqdTheme) private var theme
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: "chevron.up").font(.caption.weight(.bold))
+                if showsCount {
+                    Text("\(count)").font(.subheadline.weight(.bold)).monospacedDigit()
+                }
+            }
+            .padding(.horizontal, 12)
+            .frame(minHeight: 34)
+            .foregroundStyle(foreground)
+            .background(Capsule().fill(fill))
+            .overlay(Capsule().strokeBorder(voted || inverted ? Color.clear : theme.textSecondary.opacity(0.25)))
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(voted ? strings(.voteVoted) : strings(.voteUpvote))
+        .accessibilityValue("\(count)")
+        .accessibilityAddTraits(voted ? .isSelected : [])
+    }
+
+    private var foreground: Color {
+        if inverted { return theme.primary }
+        return voted ? .white : theme.textPrimary
+    }
+
+    private var fill: Color {
+        if inverted { return voted ? Color.white : Color.white.opacity(0.85) }
+        return voted ? theme.voteActive : theme.background
+    }
+}
+
+/// A status's name, or its slug made readable when the board does not know it.
+func statusLabel(_ status: RemoteStatus?, slug: String) -> String {
+    status?.label ?? slug.replacingOccurrences(of: "_", with: " ").capitalized
 }
 
 struct CommentRow: View {

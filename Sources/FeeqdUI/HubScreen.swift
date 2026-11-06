@@ -436,19 +436,105 @@ struct BoardListView: View {
     }
 
     private var showsTabs: Bool { store.visibleTabs.count > 1 && store.query.isEmpty }
+    /// Search orders by relevance, so the order menu goes while there is a query.
+    private var showsOrder: Bool { store.canChangeOrder && store.query.isEmpty }
 
+    /// Open / Done, and the order menu beside it when the dashboard lets people pick. Not in the
+    /// navigation bar: a second item there next to the search reopens it on iOS 27.
     private var tabPicker: some View {
-        Picker("", selection: $tab) {
-            ForEach(store.visibleTabs, id: \.self) { option in
-                let total = store.count(in: option)
-                Text("\(tabLabel(option)) (\(total.count)\(total.isComplete ? "" : "+"))").tag(option)
+        HStack(spacing: 8) {
+            if showsTabs {
+                Picker("", selection: $tab) {
+                    ForEach(store.visibleTabs, id: \.self) { option in
+                        let total = store.count(in: option)
+                        Text("\(tabLabel(option)) (\(total.count)\(total.isComplete ? "" : "+"))").tag(option)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            } else {
+                Spacer()
             }
+            if showsOrder { orderMenu }
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(theme.background)
+    }
+
+    private var orderMenu: some View {
+        Menu {
+            Picker(strings(.sortTitle), selection: Binding(get: { store.order }, set: { next in Task { await store.setOrder(next) } })) {
+                ForEach(ListOrder.allCases, id: \.self) { option in
+                    Text(orderLabel(option)).tag(option)
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.up.arrow.down")
+                Text(orderLabel(store.order))
+            }
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(theme.textPrimary)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 34)
+            .background(theme.surface, in: Capsule())
+            .overlay(Capsule().strokeBorder(theme.textSecondary.opacity(0.25)))
+            .contentShape(Capsule())
+        }
+        .accessibilityLabel("\(strings(.sortTitle)): \(orderLabel(store.order))")
+    }
+
+    private func orderLabel(_ order: ListOrder) -> String {
+        switch order {
+        case .votes: return strings(.sortVotes)
+        case .recent: return strings(.sortRecent)
+        case .status: return strings(.sortStatus)
+        }
+    }
+
+    private enum RowLook { case compact, cards, spotlight }
+
+    /// One request in the look the dashboard picked. A spotlight `rank` is a row under the
+    /// headline card; no rank is the headline itself.
+    @ViewBuilder
+    private func row(
+        _ entry: Entry, style: RowLook, rank: Int? = nil, showsStatus: Bool = true, scope: SDKConfig.Tab?
+    ) -> some View {
+        let status = store.status(for: entry.state)
+        let voted = store.votedIDs.contains(entry.id)
+        let behaviour = store.config.behaviour
+        let vote = { Task { await store.toggleVote(entryID: entry.id) } }
+        let cell = Button {
+            opened = entry
+        } label: {
+            Group {
+                switch style {
+                case .compact:
+                    EntryRow(entry: entry, status: status, voted: voted, behaviour: behaviour, showsStatus: showsStatus) { _ = vote() }
+                case .cards:
+                    EntryCard(entry: entry, status: status, voted: voted, behaviour: behaviour, showsStatus: showsStatus) { _ = vote() }
+                case .spotlight:
+                    if let rank {
+                        RankedRow(rank: rank, entry: entry, status: status, voted: voted, behaviour: behaviour) { _ = vote() }
+                    } else {
+                        SpotlightCard(entry: entry, status: status, voted: voted, behaviour: behaviour) { _ = vote() }
+                    }
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .task { await store.loadMoreIfNeeded(current: entry, in: scope) }
+        if style == .cards || (style == .spotlight && rank == nil) {
+            // Cards and the headline sit apart, with no hairlines between them.
+            cell
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+        } else {
+            // The separator starts at the row's left edge.
+            cell.alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+        }
     }
 
     private func tabLabel(_ tab: SDKConfig.Tab) -> String {
@@ -460,47 +546,63 @@ struct BoardListView: View {
     }
 
     private var list: some View {
-        let rows = showsTabs ? store.entries(in: tab) : store.entries
+        let scope = showsTabs ? tab : nil
+        let rows = store.entries(in: scope)
+        let style = store.config.behaviour.rowStyle
+        let browsing = store.query.isEmpty
         return List {
-            // Rows on the background with hairlines between them, like the dashboard's lists.
-            Section {
-            ForEach(rows) { entry in
-                Button {
-                    opened = entry
-                } label: {
-                    EntryRow(
-                        entry: entry,
-                        status: store.status(for: entry.state),
-                        voted: store.votedIDs.contains(entry.id),
-                        behaviour: store.config.behaviour
-                    ) {
-                        Task { await store.toggleVote(entryID: entry.id) }
+            if store.order == .status && browsing && !rows.isEmpty {
+                // By status: each status's name over its requests, the furthest along first. The
+                // names are rows, not section headers, which would put a table's gap around each.
+                Section {
+                    ForEach(store.statusGroups(in: scope)) { group in
+                        StatusGroupHeader(status: group.status, slug: group.slug, count: group.entries.count)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 18, leading: 16, bottom: 2, trailing: 16))
+                        ForEach(group.entries) { entry in
+                            row(entry, style: style == .cards ? .cards : .compact, showsStatus: false, scope: scope)
+                        }
                     }
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                // The separator starts at the vote tile, the row's left edge.
-                .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
-                .task { await store.loadMoreIfNeeded(current: entry, in: showsTabs ? tab : nil) }
+                .listSectionSeparator(.hidden)
+                .listRowBackground(theme.background)
+            } else if style == .spotlight && store.order == .votes && browsing, let first = rows.first {
+                // The most voted large on top, the rest ranked under it.
+                Section {
+                    row(first, style: .spotlight, scope: scope)
+                    ForEach(Array(rows.dropFirst().enumerated()), id: \.element.id) { index, entry in
+                        row(entry, style: .spotlight, rank: index + 2, scope: scope)
+                    }
+                }
+                .listSectionSeparator(.hidden)
+                .listRowBackground(theme.background)
+            } else {
+                Section {
+                    ForEach(rows) { entry in row(entry, style: style == .cards ? .cards : .compact, scope: scope) }
+                }
+                // Lines between rows only: none over the first or under the footer.
+                .listSectionSeparator(.hidden)
+                .listRowBackground(theme.background)
             }
-            if rows.isEmpty, store.hasMore, showsTabs, tab != .mine {
-                // Nothing of this tab in what is loaded yet, but the board goes on: fetch on.
-                ProgressView()
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 24)
-                    .listRowSeparator(.hidden)
-                    .task(id: store.entries.count) { await store.loadMore() }
-            } else if rows.isEmpty {
-                Text(store.query.isEmpty ? strings(.tabEmpty) : strings(.searchEmpty))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 24)
-                    .listRowSeparator(.hidden)
-            }
-            if store.isLoadingMore {
-                ProgressView().frame(maxWidth: .infinity).listRowSeparator(.hidden)
-            }
+            Section {
+                if rows.isEmpty, store.hasMore, showsTabs, tab != .mine {
+                    // Nothing of this tab in what is loaded yet, but the board goes on: fetch on.
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                        .listRowSeparator(.hidden)
+                        .task(id: store.entries.count) { await store.loadMore() }
+                } else if rows.isEmpty {
+                    Text(store.query.isEmpty ? strings(.tabEmpty) : strings(.searchEmpty))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                        .listRowSeparator(.hidden)
+                }
+                if store.isLoadingMore {
+                    ProgressView().frame(maxWidth: .infinity).listRowSeparator(.hidden)
+                }
             } footer: {
                 VStack(spacing: 0) {
                     if store.config.behaviour.poweredByFeeqd {
@@ -513,15 +615,15 @@ struct BoardListView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            // Lines between rows only: none over the first or under the footer.
             .listSectionSeparator(.hidden)
             .listRowBackground(theme.background)
         }
         .feeqdRowList(theme)
+        .feeqdTightSections()
         .safeAreaInset(edge: .top, spacing: 0) {
             // Open / Closed across the width, pinned under the title: what a list of requests
             // in an iOS app usually opens with.
-            if showsTabs { tabPicker }
+            if showsTabs || showsOrder { tabPicker }
         }
         .refreshable { await store.load() }
         .navigationDestination(isPresented: Binding(get: { opened != nil }, set: { if !$0 { opened = nil } })) {

@@ -37,13 +37,16 @@ final class RetryTests: XCTestCase {
         XCTAssertEqual(StubURLProtocol.waits, [1, 2, 4, 8])
     }
 
-    /// A timeout or a 500 may come after the server stored it: sending it again would post it twice.
-    func testANewCommentIsNotSentAgainWhenItMayHaveArrived() async throws {
+    /// A timeout or a 500 may come after the server stored it. It goes again with the same key,
+    /// and the server answers a repeat with what it stored instead of storing it twice.
+    func testANewRequestThatMayHaveArrivedIsSentAgainWithItsKey() async throws {
         for response: StubURLProtocol.Response in [.failure(.timedOut), .failure(.networkConnectionLost), .init(status: 500), .init(status: 504)] {
             StubURLProtocol.reset()
             answer(response)
             _ = try? await FeeqdClient.stubbed().submit(boardID: "B", title: "T", description: "D")
-            XCTAssertEqual(StubURLProtocol.requests.count, 1, "\(response)")
+            let keys = Set(StubURLProtocol.requests.map { $0.value(forHTTPHeaderField: "Idempotency-Key") })
+            XCTAssertEqual(StubURLProtocol.requests.count, 5, "\(response)")
+            XCTAssertEqual(keys.count, 1, "one key on every attempt, \(response)")
         }
     }
 

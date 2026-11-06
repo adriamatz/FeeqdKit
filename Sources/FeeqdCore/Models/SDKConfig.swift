@@ -208,6 +208,15 @@ package struct HubLayout: Decodable, Equatable, Sendable {
 /// after.
 package struct SDKConfig: Decodable, Equatable, Sendable {
     package enum SortOrder: String, Sendable { case votes, recent }
+    /// How the board's rows look, picked in the dashboard. Compact when unset or unknown.
+    package enum RowStyle: String, Sendable, CaseIterable {
+        /// Title, two lines of description, the status as a coloured chip; the vote on the right.
+        case compact
+        /// Each request a card: status, title, description, then comments and a vote button.
+        case cards
+        /// The most voted request large on top, the rest ranked under it.
+        case spotlight
+    }
     package enum EmailField: String, Sendable { case none, optional, required }
     package enum Tab: String, Sendable, Hashable, CaseIterable { case open, done, mine }
 
@@ -220,6 +229,9 @@ package struct SDKConfig: Decodable, Equatable, Sendable {
         package var poweredByFeeqd = false
         package var emailField: EmailField = .none
         package var defaultSort: SortOrder = .votes
+        /// The person may change the list's order (`ListOrder`); `defaultSort` is where it starts.
+        package var userSort = false
+        package var rowStyle: RowStyle = .compact
         package var tabs: [Tab] = [.open, .done]
         /// Nil until the admin saves an in-app experience: then the hub is the key's first board.
         package var layout: HubLayout?
@@ -307,7 +319,7 @@ package struct SDKConfig: Decodable, Equatable, Sendable {
 
 extension SDKConfig.Behaviour: Decodable {
     enum CodingKeys: String, CodingKey {
-        case allowVoteUndo, showVoteCount, showCommentCount, submitEnabled, poweredByFeeqd, emailField, defaultSort, tabs, layout
+        case allowVoteUndo, showVoteCount, showCommentCount, submitEnabled, poweredByFeeqd, emailField, defaultSort, userSort, rowStyle, tabs, layout
     }
 
     package init(from decoder: Decoder) throws {
@@ -318,6 +330,10 @@ extension SDKConfig.Behaviour: Decodable {
         if let value = try? c.decode(Bool.self, forKey: .showCommentCount) { showCommentCount = value }
         if let value = try? c.decode(Bool.self, forKey: .submitEnabled) { submitEnabled = value }
         if let value = try? c.decode(Bool.self, forKey: .poweredByFeeqd) { poweredByFeeqd = value }
+        if let value = try? c.decode(Bool.self, forKey: .userSort) { userSort = value }
+        if let value = (try? c.decode(String.self, forKey: .rowStyle)).flatMap(SDKConfig.RowStyle.init(rawValue:)) {
+            rowStyle = value
+        }
         if let value = (try? c.decode(String.self, forKey: .emailField)).flatMap(SDKConfig.EmailField.init(rawValue:)) {
             emailField = value
         }

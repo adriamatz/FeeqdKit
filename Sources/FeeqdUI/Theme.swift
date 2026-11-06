@@ -260,6 +260,20 @@ extension View {
             .feeqdListBackground(theme)
     }
 
+    /// Sections close together: "By status" is one list cut by headers, not separate tables.
+    @ViewBuilder
+    func feeqdTightSections() -> some View {
+        #if os(iOS)
+        if #available(iOS 17, *) {
+            listSectionSpacing(.compact)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+
     /// A List on the theme's background instead of the system's.
     func feeqdListBackground(_ theme: ResolvedTheme) -> some View {
         scrollContentBackground(.hidden)

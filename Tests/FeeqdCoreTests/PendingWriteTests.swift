@@ -12,7 +12,6 @@ final class PendingWriteTests: XCTestCase {
     }
 
     private let created = Data(#"{"id":"c1","entry_id":"E","content":"Hi"}"#.utf8)
-    private let dedupes = ["Feeqd-Idempotency": "1"]
 
     private func answer(_ responses: StubURLProtocol.Response...) {
         StubURLProtocol.responder = { _ in responses[min(StubURLProtocol.requests.count, responses.count) - 1] }
@@ -31,47 +30,28 @@ final class PendingWriteTests: XCTestCase {
         XCTAssertEqual(keys[0], keys[1])
     }
 
-    func testAnUncertainWriteIsSentAgainOnlyToAServerThatDedupes() async throws {
-        let client = FeeqdClient.stubbed()
-        answer(.json(200, try Fixture.data("my_votes"), headers: dedupes))
-        _ = try await client.myVotes(boardID: "B")
-
-        StubURLProtocol.reset()
-        answer(.failure(.timedOut), .init(status: 500, headers: dedupes), .json(201, created, headers: dedupes))
-        _ = try await client.comment(boardID: "B", entryID: "E", content: "Hi")
-        XCTAssertEqual(StubURLProtocol.requests.count, 3)
-    }
-
     func testAWriteStillRunningOnTheServerIsWaitedOut() async throws {
-        let client = FeeqdClient.stubbed()
-        answer(.json(200, try Fixture.data("my_votes"), headers: dedupes))
-        _ = try await client.myVotes(boardID: "B")
-
-        StubURLProtocol.reset()
-        answer(.json(409, Data(#"{"error":"idempotency_in_progress"}"#.utf8), headers: dedupes), .json(201, created, headers: dedupes))
-        _ = try await client.comment(boardID: "B", entryID: "E", content: "Hi")
+        answer(.json(409, Data(#"{"error":"idempotency_in_progress"}"#.utf8)), .json(201, created))
+        _ = try await FeeqdClient.stubbed().comment(boardID: "B", entryID: "E", content: "Hi")
         XCTAssertEqual(StubURLProtocol.requests.count, 2)
     }
 
     // MARK: What is kept
 
-    func testOnlyAWriteThatCanBeSentAgainSafelyIsKept() async throws {
+    func testOnlyAWriteThatCanGoOutLaterIsKept() async throws {
         let client = FeeqdClient.stubbed()
         let offline = await client.canKeepForLater(.offline)
         let gateway = await client.canKeepForLater(.server(status: 503, code: nil, message: nil))
         let timeout = await client.canKeepForLater(.transport("timed out"))
+        let serverError = await client.canKeepForLater(.server(status: 500, code: nil, message: nil))
         let refused = await client.canKeepForLater(.server(status: 400, code: "validation_error", message: nil))
         let full = await client.canKeepForLater(.quotaExceeded)
         XCTAssertTrue(offline)
         XCTAssertTrue(gateway)
-        XCTAssertFalse(timeout, "it may have arrived, and this server would store it twice")
+        XCTAssertTrue(timeout, "it goes again with its key, and the server keeps one")
+        XCTAssertTrue(serverError)
         XCTAssertFalse(refused)
         XCTAssertFalse(full)
-
-        answer(.json(200, try Fixture.data("my_votes"), headers: dedupes))
-        _ = try await client.myVotes(boardID: "B")
-        let timeoutOnADedupingServer = await client.canKeepForLater(.transport("timed out"))
-        XCTAssertTrue(timeoutOnADedupingServer)
     }
 
     // MARK: Sending later

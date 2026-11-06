@@ -22,6 +22,11 @@ package enum StringKey: String, CaseIterable, Sendable {
     case commentsEmpty = "comments.empty"
     case entryOnlyYouHint = "entry.only_you_hint"
     case tabMine = "tab.mine"
+    case sortTitle = "sort.title"
+    case sortVotes = "sort.votes"
+    case sortRecent = "sort.recent"
+    case sortStatus = "sort.status"
+    case listTop = "list.top"
     case commentPlaceholder = "comment.placeholder"
     case commentReplyPlaceholder = "comment.replyPlaceholder"
     case commentSend = "comment.send"
@@ -145,6 +150,11 @@ package struct StringTable: Sendable {
             "comments.empty": "No comments yet.",
             "entry.only_you_hint": "Only you and the team see this for now.",
             "tab.mine": "Mine",
+            "sort.title": "Sort",
+            "sort.votes": "Most voted",
+            "sort.recent": "Newest",
+            "sort.status": "By status",
+            "list.top": "Most requested",
             "comment.placeholder": "Add a comment",
             "comment.replyPlaceholder": "Write a reply",
             "comment.send": "Send",
@@ -221,6 +231,11 @@ package struct StringTable: Sendable {
             "comments.empty": "Todavía no hay comentarios.",
             "entry.only_you_hint": "Por ahora solo lo veis tú y el equipo.",
             "tab.mine": "Mías",
+            "sort.title": "Ordenar",
+            "sort.votes": "Más votadas",
+            "sort.recent": "Más nuevas",
+            "sort.status": "Por estado",
+            "list.top": "La más pedida",
             "comment.placeholder": "Añade un comentario",
             "comment.replyPlaceholder": "Escribe una respuesta",
             "comment.send": "Enviar",

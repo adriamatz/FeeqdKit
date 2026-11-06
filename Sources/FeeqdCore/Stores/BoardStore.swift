@@ -1,6 +1,14 @@
 import Combine
 import Foundation
 
+/// The list's order as the person picks it, when the dashboard lets them (`userSort`).
+package enum ListOrder: String, CaseIterable, Sendable {
+    case votes, recent
+    /// The furthest along first (in progress before planned before new), the most voted first
+    /// within each status. Sorted on the device: the board is loaded whole.
+    case status
+}
+
 /// The board screen's state: config, pages, own votes, search.
 ///
 /// Main-actor bound so SwiftUI reads it directly; the network work happens in `FeeqdClient`.
@@ -23,6 +31,8 @@ package final class BoardStore: ObservableObject {
     @Published package private(set) var opened: [String: Entry] = [:]
     @Published package private(set) var isLoadingMore = false
     @Published package private(set) var query = ""
+    /// What the person picked, kept across launches. Used only while the dashboard allows it.
+    @Published private var chosenOrder: ListOrder?
     /// A failed vote, comment or page: shown once, never replacing content already on screen.
     @Published package var lastActionError: FeeqdError?
 
@@ -32,11 +42,19 @@ package final class BoardStore: ObservableObject {
     private let pageSize: Int
     private var pagination: Pagination?
     private var votesInFlight: Set<String> = []
+    private let defaults: UserDefaults
+
+    package static let orderKey = "com.feeqd.feeqdkit.listOrder"
 
     /// Pages are as big as the reader serves (200): the Open / Done tabs split what is loaded, so
     /// one page holding the whole board is what makes their counts exact on almost every app.
-    package init(client: FeeqdClient, preferredBoardID: String? = nil, initialConfig: SDKConfig = .fallback, pageSize: Int = 200) {
+    package init(
+        client: FeeqdClient, preferredBoardID: String? = nil, initialConfig: SDKConfig = .fallback, pageSize: Int = 200,
+        defaults: UserDefaults = .standard
+    ) {
         self.client = client
+        self.defaults = defaults
+        self.chosenOrder = defaults.string(forKey: Self.orderKey).flatMap(ListOrder.init(rawValue:))
         self.preferredBoardID = preferredBoardID
         // Known before the first load: a detail opened from elsewhere (the roadmap) needs it.
         self.boardID = preferredBoardID
@@ -45,6 +63,39 @@ package final class BoardStore: ObservableObject {
     }
 
     package var hasMore: Bool { pagination?.hasNext ?? false }
+
+    package var canChangeOrder: Bool { config.behaviour.userSort }
+
+    /// The person's pick when the dashboard lets them choose, else the dashboard's default.
+    package var order: ListOrder {
+        let fallback: ListOrder = config.behaviour.defaultSort == .recent ? .recent : .votes
+        return canChangeOrder ? (chosenOrder ?? fallback) : fallback
+    }
+
+    /// Most voted and newest are the server's order; by status keeps the server's default and
+    /// sorts on the device.
+    private var serverSort: SDKConfig.SortOrder {
+        switch order {
+        case .votes: return .votes
+        case .recent: return .recent
+        case .status: return config.behaviour.defaultSort
+        }
+    }
+
+    package func setOrder(_ next: ListOrder) async {
+        guard canChangeOrder, next != order else { return }
+        let before = serverSort
+        chosenOrder = next
+        defaults.set(next.rawValue, forKey: Self.orderKey)
+        guard serverSort != before, let board = boardID else { return }
+        do {
+            apply(try await fetchPage(board: board, page: 1), replacing: true)
+            await loadRest()
+        } catch {
+            if FeeqdError.isCancellation(error) { return }
+            lastActionError = FeeqdError.wrap(error)
+        }
+    }
 
     /// Never loaded, or the last load failed. A load cut short when the user switched section
     /// ends as `.failed`: coming back to the board has to try again, not keep the error.
@@ -83,16 +134,50 @@ package final class BoardStore: ObservableObject {
 
     /// There is no status filter on the list endpoint yet (spec H5), so tabs filter what is loaded.
     package func entries(in tab: SDKConfig.Tab?) -> [Entry] {
-        guard let tab else { return entries }
+        guard let tab else { return ordered(entries) }
         if tab == .mine { return mine }
-        return entries.filter { entry in
+        return ordered(entries.filter { entry in
             let category = status(for: entry.state)?.category ?? .open
             switch tab {
             case .open: return category != .closed
             case .done: return category == .closed
             case .mine: return false
             }
+        })
+    }
+
+    /// The requests of a status, under its name: what "By status" shows.
+    package struct StatusGroup: Identifiable {
+        package let slug: String
+        package let status: RemoteStatus?
+        package let entries: [Entry]
+        package var id: String { slug }
+    }
+
+    /// The tab's requests in their order, one group per status in the order they come.
+    package func statusGroups(in tab: SDKConfig.Tab?) -> [StatusGroup] {
+        var groups: [StatusGroup] = []
+        for entry in entries(in: tab) {
+            if let last = groups.last, last.slug == entry.state {
+                groups[groups.count - 1] = StatusGroup(slug: last.slug, status: last.status, entries: last.entries + [entry])
+            } else {
+                groups.append(StatusGroup(slug: entry.state, status: status(for: entry.state), entries: [entry]))
+            }
         }
+        return groups
+    }
+
+    private func ordered(_ list: [Entry]) -> [Entry] {
+        guard order == .status, query.isEmpty else { return list }
+        let rank = Dictionary(config.statuses.enumerated().map { ($1.slug, $0) }, uniquingKeysWith: { first, _ in first })
+        return list.enumerated()
+            .sorted { a, b in
+                let (ra, rb) = (rank[a.element.state] ?? -1, rank[b.element.state] ?? -1)
+                if ra != rb { return ra > rb }
+                if a.element.voteCount != b.element.voteCount { return a.element.voteCount > b.element.voteCount }
+                return a.offset < b.offset
+            }
+            .map(\.element)
     }
 
     // MARK: Loading
@@ -260,7 +345,7 @@ package final class BoardStore: ObservableObject {
 
     private func fetchPage(board: String, page: Int) async throws -> Page<Entry> {
         try await client.entries(
-            boardID: board, page: page, pageSize: pageSize, sort: config.behaviour.defaultSort, query: query.isEmpty ? nil : query
+            boardID: board, page: page, pageSize: pageSize, sort: serverSort, query: query.isEmpty ? nil : query
         )
     }
 

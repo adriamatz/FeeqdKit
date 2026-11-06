@@ -2,7 +2,7 @@ import Foundation
 import os
 
 package enum FeeqdCoreVersion {
-    package static let current = "0.4.9"
+    package static let current = "0.4.10"
 }
 
 package struct ClientConfiguration: Sendable {
@@ -49,10 +49,6 @@ package actor FeeqdClient {
     private let identity: DeviceIdentityProviding
     private let retryPolicy: RetryPolicy
     private let outbox: Outbox
-    /// Whether go-gatherer said it keeps a write's Idempotency-Key (`Feeqd-Idempotency: 1` on its
-    /// answers; the launch read is one). Until it has, a write that may have arrived is never
-    /// sent again: an older backend would store it twice.
-    private var serverDedupes = false
     private var sendingPending = false
     private let decoder = JSONDecoder.feeqd
     private var identityToken: String?
@@ -382,15 +378,13 @@ package actor FeeqdClient {
 
     // MARK: Pending writes
 
-    /// Whether a write that failed this way can be kept and sent later without risk of storing
-    /// it twice: it surely never arrived, or the server would recognise it by its key.
+    /// Whether a write that failed this way is worth keeping to send later. Sending it again is
+    /// safe whatever happened: it goes with the key it was first sent with, and the server
+    /// answers a repeat with what it stored. What the server refused is not kept.
     package func canKeepForLater(_ error: FeeqdError) -> Bool {
         switch error {
-        case .offline, .rateLimited: return true
-        case let .server(status, code, _):
-            if status == 502 || status == 503 || code == "idempotency_in_progress" { return true }
-            return serverDedupes && status >= 500
-        case .transport: return serverDedupes
+        case .offline, .rateLimited, .transport: return true
+        case let .server(status, code, _): return status >= 500 || code == "idempotency_in_progress"
         default: return false
         }
     }
@@ -529,7 +523,6 @@ package actor FeeqdClient {
             do {
                 let (data, response) = try await session.data(for: request)
                 guard let http = response as? HTTPURLResponse else { throw FeeqdError.transport("No HTTP response") }
-                if service == .gatherer { serverDedupes = http.value(forHTTPHeaderField: "Feeqd-Idempotency") == "1" }
                 if (200..<300).contains(http.statusCode) || (acceptNotModified && http.statusCode == 304) {
                     return (data, http)
                 }
@@ -540,7 +533,7 @@ package actor FeeqdClient {
                 error = FeeqdError.wrap(failure)
             }
             // A write the server recognises by its key is as safe to repeat as a vote.
-            let safety = safety == .once && idempotencyKey != nil && serverDedupes ? .idempotent : safety
+            let safety = safety == .once && idempotencyKey != nil ? .idempotent : safety
             guard let wait = waitBeforeRetry(error, safety: safety, retry: retry) else { throw error }
             try await retryPolicy.sleep(wait)
             retry += 1
