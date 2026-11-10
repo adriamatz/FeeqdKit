@@ -190,7 +190,7 @@ Overrides apply in every language. For copy that should change without a release
 
 Only if the user asks:
 
-- For App Store subscriptions, set `collectPurchases: true`. The developer must then declare **Purchase History** in the app's privacy details.
+- For App Store subscriptions, set `collectPurchases: true`.
 - For billing outside the App Store, pass it in `updateUser(id:…, payment: .monthly(9.99, currency: "EUR"))`.
 
 ## Don'ts
@@ -200,3 +200,4 @@ Only if the user asks:
 - Don't change `readerURL` / `gathererURL` in an app.
 - Don't put the signing secret, or code that signs the JWT, in the app.
 - Don't build a custom feedback form against Feeqd's HTTP API. Use the views.
+- Don't open App Store Connect or change the app's privacy details, and don't ask the user to sign in so you can. That stays with the developer.
