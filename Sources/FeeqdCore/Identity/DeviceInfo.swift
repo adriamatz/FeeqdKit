@@ -25,6 +25,22 @@ package enum DeviceInfo {
         return nil
     }
 
+    /// The same fields as the header, for a chat message's context: the dashboard reads the
+    /// context, not the header, so this is what puts the model and OS beside a conversation.
+    /// No size cap here: the context has no 512-byte limit.
+    package static func contextValue(sdkVersion: String, appVersion: String? = nil) -> [String: String] {
+        let bundle = Bundle.main.infoDictionary
+        var info: [String: String] = [
+            "model": modelIdentifier(),
+            "os": osVersion(),
+            "sdk": sdkVersion,
+            "locale": Locale.current.identifier,
+        ]
+        if let app = appVersion ?? (bundle?["CFBundleShortVersionString"] as? String) { info["app"] = app }
+        if let build = bundle?["CFBundleVersion"] as? String { info["build"] = build }
+        return info
+    }
+
     /// What goes with the launch request: the app and SDK versions, nothing about the device.
     ///
     /// The backend records a device once an hour, from whichever request comes first, and that

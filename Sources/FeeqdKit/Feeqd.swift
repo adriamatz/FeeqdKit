@@ -137,18 +137,35 @@ public enum Feeqd {
     /// The private chat with your team on its own, for when you want it somewhere other than
     /// the board. Check `chatStatus()` before offering it. Presented, it brings its own
     /// navigation; pushed onto yours, pass `pushed: true`.
+    ///
+    /// `context` says where the user opened it from, in your own keys:
+    ///
+    /// ```swift
+    /// Feeqd.ChatView(pushed: true, context: ["view": "club", "club": "Fae & Fury", "channel": "General"])
+    /// ```
+    ///
+    /// It goes with the first message they write on this visit (opening the conversation, or
+    /// into the one they already have), with the device's model, OS, locale and app version, and
+    /// the dashboard shows it beside the conversation and over that message. `view` is the key
+    /// the dashboard names the screen by. Not on every message: one visit, one context. Leave it
+    /// out and nothing is sent, as before.
     public struct ChatView: View {
         private let pushed: Bool
+        private let context: [String: String]?
 
-        /// - Parameter pushed: `true` when you push it onto your own `NavigationStack` (a
-        ///   `NavigationLink` in your settings) instead of presenting it.
-        public init(pushed: Bool = false) {
+        /// - Parameters:
+        ///   - pushed: `true` when you push it onto your own `NavigationStack` (a
+        ///     `NavigationLink` in your settings) instead of presenting it.
+        ///   - context: where the user is, as plain strings. Never anything secret: the team
+        ///     reads it as it came.
+        public init(pushed: Bool = false, context: [String: String]? = nil) {
             self.pushed = pushed
+            self.context = context
         }
 
         public var body: some View {
             if let context = Feeqd.context {
-                FreshAfterReset { StandaloneChatScreen(context: context, ownsNavigation: !pushed) }
+                FreshAfterReset { StandaloneChatScreen(context: context, ownsNavigation: !pushed, chatContext: self.context) }
             } else {
                 NotConfiguredView()
             }

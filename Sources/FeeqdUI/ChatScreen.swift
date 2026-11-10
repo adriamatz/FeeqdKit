@@ -10,8 +10,8 @@ package struct ChatScreen: View {
     @Environment(\.feeqdStrings) private var strings
     @Environment(\.feeqdTheme) private var theme
 
-    package init(client: FeeqdClient) {
-        _store = StateObject(wrappedValue: ChatStore(client: client))
+    package init(client: FeeqdClient, context: [String: String]? = nil) {
+        _store = StateObject(wrappedValue: ChatStore(client: client, context: context))
     }
 
     package var body: some View {
@@ -188,11 +188,13 @@ private struct ChatEmptyState: View {
 package struct StandaloneChatScreen: View {
     private let context: FeeqdContext
     private let ownsNavigation: Bool
+    private let chatContext: [String: String]?
     @StateObject private var board: BoardStore
 
-    package init(context: FeeqdContext, ownsNavigation: Bool = true) {
+    package init(context: FeeqdContext, ownsNavigation: Bool = true, chatContext: [String: String]? = nil) {
         self.context = context
         self.ownsNavigation = ownsNavigation
+        self.chatContext = chatContext
         _board = StateObject(wrappedValue: BoardStore(client: context.client, preferredBoardID: context.preferredBoardID))
     }
 
@@ -202,9 +204,9 @@ package struct StandaloneChatScreen: View {
     package var body: some View {
         Group {
             if ownsNavigation {
-                NavigationStack { ChatScreen(client: context.client) }
+                NavigationStack { ChatScreen(client: context.client, context: chatContext) }
             } else {
-                ChatScreen(client: context.client)
+                ChatScreen(client: context.client, context: chatContext)
             }
         }
         .tint(theme.primary)

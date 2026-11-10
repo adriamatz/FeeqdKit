@@ -8,8 +8,9 @@ package struct PendingWrite: Codable, Equatable, Identifiable, Sendable {
         case request(boardID: String, title: String, description: String)
         case comment(boardID: String, entryID: String, content: String, parentID: String?)
         /// `conversationID` is where it was going, `nil` when it was starting one: the key names
-        /// the same write only on the same route.
-        case chatMessage(body: String, conversationID: String?)
+        /// the same write only on the same route. `context` is the app's, when this was the
+        /// first message of a visit; the device's part is read again when it goes out.
+        case chatMessage(body: String, conversationID: String?, context: [String: String]? = nil)
     }
 
     package let id: String

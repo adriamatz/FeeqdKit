@@ -2,7 +2,7 @@ import Foundation
 import os
 
 package enum FeeqdCoreVersion {
-    package static let current = "0.4.12"
+    package static let current = "0.5.0"
 }
 
 package struct ClientConfiguration: Sendable {
@@ -338,11 +338,19 @@ package actor FeeqdClient {
     /// Opens a conversation with its first message. If the device already has one open, the
     /// server hands that one back untouched — and the message is not added to it, so the
     /// caller sends it separately (`firstMessageID` is `nil` in that case).
-    package func startConversation(message: String, idempotencyKey: String = UUID().uuidString) async throws -> StartedConversation {
+    ///
+    /// `context` is what the app said about where the user is (`Feeqd.ChatView(context:)`); with
+    /// it go the device's model, OS, locale and app version, so the team reads them beside the
+    /// conversation. `nil` sends no context at all.
+    package func startConversation(
+        message: String, context: [String: String]? = nil, idempotencyKey: String = UUID().uuidString
+    ) async throws -> StartedConversation {
+        var body: [String: Any] = ["message": message]
+        if let context { body["context"] = chatContext(context) }
         do {
             let (data, _) = try await send(
                 "POST", .gatherer, "/sdk/chat/conversations",
-                body: try JSONSerialization.data(withJSONObject: ["message": message]), credential: .keyAndDevice, isUserAction: true,
+                body: try JSONSerialization.data(withJSONObject: body), credential: .keyAndDevice, isUserAction: true,
                 idempotencyKey: idempotencyKey
             )
             return try decode(StartedConversation.self, data)
@@ -352,13 +360,27 @@ package actor FeeqdClient {
         }
     }
 
-    package func sendChatMessage(conversationID: String, body: String, idempotencyKey: String = UUID().uuidString) async throws -> ChatMessage {
+    /// `context` as in `startConversation`: sent with the first message of a visit, so the team
+    /// sees where this one was written from in a conversation that may be months old.
+    package func sendChatMessage(
+        conversationID: String, body: String, context: [String: String]? = nil, idempotencyKey: String = UUID().uuidString
+    ) async throws -> ChatMessage {
+        var payload: [String: Any] = ["body": body]
+        if let context { payload["context"] = chatContext(context) }
         let (data, _) = try await send(
             "POST", .gatherer, "/sdk/chat/conversations/\(conversationID)/messages",
-            body: try JSONSerialization.data(withJSONObject: ["body": body]), credential: .keyAndDevice, isUserAction: true,
+            body: try JSONSerialization.data(withJSONObject: payload), credential: .keyAndDevice, isUserAction: true,
             idempotencyKey: idempotencyKey
         )
         return try decode(ChatMessage.self, data)
+    }
+
+    /// The app's keys as they came, and the device under `device`. The app's own `device` key
+    /// loses: the device's is the one the dashboard reads.
+    private func chatContext(_ app: [String: String]) -> [String: Any] {
+        var context: [String: Any] = app
+        context["device"] = DeviceInfo.contextValue(sdkVersion: configuration.sdkVersion, appVersion: configuration.appVersion)
+        return context
     }
 
     package func closeConversation(conversationID: String) async throws {
@@ -431,18 +453,18 @@ package actor FeeqdClient {
             _ = try await submit(boardID: boardID, title: title, description: description, idempotencyKey: write.id)
         case let .comment(boardID, entryID, content, parentID):
             _ = try await comment(boardID: boardID, entryID: entryID, content: content, parentID: parentID, idempotencyKey: write.id)
-        case let .chatMessage(body, conversationID):
+        case let .chatMessage(body, conversationID, context):
             // Back to the route it was first sent to, so the server can tell a repeat from a new
             // message. A conversation closed before it arrived: a new one, as the chat screen does.
             if let conversationID {
                 do {
-                    _ = try await sendChatMessage(conversationID: conversationID, body: body, idempotencyKey: write.id)
+                    _ = try await sendChatMessage(conversationID: conversationID, body: body, context: context, idempotencyKey: write.id)
                     return
                 } catch FeeqdError.conversationClosed {}
             }
-            let started = try await startConversation(message: body, idempotencyKey: write.id)
+            let started = try await startConversation(message: body, context: context, idempotencyKey: write.id)
             if started.firstMessageID == nil {
-                _ = try await sendChatMessage(conversationID: started.id, body: body, idempotencyKey: write.id + "-m")
+                _ = try await sendChatMessage(conversationID: started.id, body: body, context: context, idempotencyKey: write.id + "-m")
             }
         }
     }

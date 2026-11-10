@@ -2,7 +2,7 @@
 
 In-app feedback for iOS: requests with votes, comments, a way to ask for something new, and a private chat with your team, backed by [Feeqd](https://feeqd.com). SwiftUI, iOS 16+, no dependencies.
 
-> **0.4.12.** Talks to production out of the box. You need a Feeqd plan that includes the iOS SDK, and the publishable key from **App & SDK** in the dashboard.
+> **0.5.0.** Talks to production out of the box. You need a Feeqd plan that includes the iOS SDK, and the publishable key from **App & SDK** in the dashboard.
 
 ## Installation
 
@@ -11,7 +11,7 @@ In Xcode: **File → Add Package Dependencies…** and paste `https://github.com
 Or in `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/adriamatz/FeeqdKit", from: "0.4.12")
+.package(url: "https://github.com/adriamatz/FeeqdKit", from: "0.5.0")
 ```
 
 and add `FeeqdKit` to your target's dependencies.
@@ -73,6 +73,14 @@ if chat.isAvailable {
 ```
 
 The button (and `isAvailable`) only appear once the server confirmed the chat works for this key: no network, a key created without chat, or a plan without it all mean no button, never a chat that can't deliver. Set `showsChatButton: false` in the configuration to keep it off the board. The screen checks for replies every five seconds while it is open; there is no push yet.
+
+To tell the team where the user was when they wrote (0.5+), pass a context in your own keys:
+
+```swift
+Feeqd.ChatView(pushed: true, context: ["view": "club", "club": "Fae & Fury", "channel": "General"])
+```
+
+It goes with the first message of that visit, with the device's model, OS, locale and app version, and the dashboard's inbox shows it beside the conversation and over the message. `view` names the screen. Without a context nothing is sent.
 
 
 ### Options

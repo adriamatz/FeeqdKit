@@ -29,7 +29,7 @@ Code is only for: integrating, where the screen is opened, who the user is, sign
 Swift Package Manager, product `FeeqdKit`:
 
 ```swift
-.package(url: "https://github.com/adriamatz/FeeqdKit", from: "0.4.12")
+.package(url: "https://github.com/adriamatz/FeeqdKit", from: "0.5.0")
 ```
 
 In an Xcode project: File → Add Package Dependencies… → `https://github.com/adriamatz/FeeqdKit`, and add `FeeqdKit` to the app target.
@@ -54,7 +54,8 @@ Feeqd.configure(FeeqdConfiguration(
 // Views. Presented (sheet, cover), each brings its own navigation and a close button.
 // Pushed onto your NavigationStack, pass pushed: true and it uses your back button.
 Feeqd.FeedbackView(pushed: Bool = false) // requests, votes, comments, new request, chat button
-Feeqd.ChatView(pushed: Bool = false)     // the private chat on its own
+Feeqd.ChatView(pushed: Bool = false,     // the private chat on its own
+               context: [String: String]? = nil)  // where it was opened from, 0.5+
 
 // Who the user is.
 Feeqd.setIdentityToken(_ token: String?) // a JWT your server signed: verified
@@ -155,6 +156,14 @@ Group {
 ```
 
 Only show it when `isAvailable` is true: it fails closed (no network, a key without chat, chat off in the dashboard). To keep the chat button off the feedback screen and offer it only this way, set `showsChatButton: false`.
+
+### Say where the chat was opened from (0.5+)
+
+```swift
+Feeqd.ChatView(pushed: true, context: ["view": "settings", "section": "Export"])
+```
+
+Plain strings, in the app's own keys; `view` is the one the dashboard names the screen by. It goes with the first message the user writes on that visit, together with the device's model, OS, locale and app version, and the dashboard shows it beside the conversation and over that message. Never put anything secret in it: the team reads it as it came. Without `context`, nothing is sent.
 
 ### Match the app's look
 
