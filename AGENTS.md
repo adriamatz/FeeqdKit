@@ -29,7 +29,7 @@ Code is only for: integrating, where the screen is opened, who the user is, sign
 Swift Package Manager, product `FeeqdKit`:
 
 ```swift
-.package(url: "https://github.com/adriamatz/FeeqdKit", from: "0.4.11")
+.package(url: "https://github.com/adriamatz/FeeqdKit", from: "0.4.12")
 ```
 
 In an Xcode project: File → Add Package Dependencies… → `https://github.com/adriamatz/FeeqdKit`, and add `FeeqdKit` to the app target.
