@@ -28,8 +28,8 @@ package final class ChatStore: ObservableObject {
 
     package let client: FeeqdClient
     /// Where the app opened the chat from (`Feeqd.ChatView(context:)`). It goes out once per
-    /// visit, with the first message: one conversation lasts months, and where she was when she
-    /// opened it says nothing about the screen she writes from today.
+    /// visit, with the first message: one conversation lasts months, and where they were when they
+    /// opened it says nothing about the screen they write from today.
     private let context: [String: String]?
     private var contextSent = false
     private var lastMarkedRead: String?
