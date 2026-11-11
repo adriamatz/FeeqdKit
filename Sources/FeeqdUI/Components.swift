@@ -1,5 +1,8 @@
 import FeeqdCore
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// The vote control: a solid tile with the count, filled with the vote colour once voted, so
 /// what you backed reads at a glance down a list. Labelled for VoiceOver, its own tap target.
@@ -44,11 +47,12 @@ struct StatusBadge: View {
     let status: RemoteStatus?
     let fallbackSlug: String
 
+    @Environment(\.feeqdStrings) private var strings
     @Environment(\.feeqdTheme) private var theme
 
     var body: some View {
         let color = theme.color(for: status, slug: fallbackSlug)
-        Text((status?.label ?? fallbackSlug.replacingOccurrences(of: "_", with: " ")).uppercased())
+        Text(statusLabel(status, slug: fallbackSlug, strings: strings).uppercased())
             .font(.caption2.weight(.semibold))
             .tracking(0.4)
             .lineLimit(1)
@@ -238,7 +242,7 @@ struct SpotlightCard: View {
                     .font(.caption.weight(.bold))
                     .opacity(0.85)
                 Spacer(minLength: 0)
-                Text(statusLabel(status, slug: entry.state))
+                Text(statusLabel(status, slug: entry.state, strings: strings))
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
@@ -279,6 +283,7 @@ struct RankedRow: View {
     let behaviour: SDKConfig.Behaviour
     let onVote: () -> Void
 
+    @Environment(\.feeqdStrings) private var strings
     @Environment(\.feeqdTheme) private var theme
 
     var body: some View {
@@ -296,7 +301,7 @@ struct RankedRow: View {
                 HStack(spacing: 8) {
                     HStack(spacing: 4) {
                         StatusMark(status: status, fallbackSlug: entry.state, size: 10)
-                        Text(statusLabel(status, slug: entry.state))
+                        Text(statusLabel(status, slug: entry.state, strings: strings))
                     }
                     .foregroundStyle(theme.color(for: status, slug: entry.state))
                     if behaviour.showCommentCount && entry.commentCount > 0 {
@@ -319,13 +324,14 @@ struct StatusGroupHeader: View {
     let slug: String
     let count: Int
 
+    @Environment(\.feeqdStrings) private var strings
     @Environment(\.feeqdTheme) private var theme
 
     var body: some View {
         let color = theme.color(for: status, slug: slug)
         HStack(spacing: 8) {
             Circle().fill(color).frame(width: 8, height: 8)
-            Text(statusLabel(status, slug: slug).uppercased())
+            Text(statusLabel(status, slug: slug, strings: strings).uppercased())
                 .foregroundStyle(color)
             Text("\(count)")
                 .foregroundStyle(theme.textSecondary)
@@ -341,13 +347,14 @@ struct StatusChip: View {
     let status: RemoteStatus?
     let slug: String
 
+    @Environment(\.feeqdStrings) private var strings
     @Environment(\.feeqdTheme) private var theme
 
     var body: some View {
         let color = theme.color(for: status, slug: slug)
         HStack(spacing: 5) {
             StatusMark(status: status, fallbackSlug: slug, size: 10)
-            Text(statusLabel(status, slug: slug))
+            Text(statusLabel(status, slug: slug, strings: strings))
         }
         .font(.caption.weight(.semibold))
         .foregroundStyle(color)
@@ -459,9 +466,9 @@ struct VoteCapsule: View {
     }
 }
 
-/// A status's name, or its slug made readable when the board does not know it.
-func statusLabel(_ status: RemoteStatus?, slug: String) -> String {
-    status?.label ?? slug.replacingOccurrences(of: "_", with: " ").capitalized
+/// A status's name in the user's language, or its slug made readable when the board does not know it.
+func statusLabel(_ status: RemoteStatus?, slug: String, strings: StringTable) -> String {
+    strings.status(status?.label, slug: slug)
 }
 
 struct CommentRow: View {
@@ -498,7 +505,7 @@ struct CommentRow: View {
                     .font(.caption)
                     .foregroundStyle(theme.textSecondary)
             }
-            Translatable(texts: [comment.content], spacing: 6) { shown, translateButton in
+            Translatable(texts: [comment.reviewAppStoreID == nil ? comment.content : strings.reviewMessage(comment.content)], spacing: 6) { shown, translateButton in
                 Text(shown[0])
                     .font(.body)
                     .foregroundStyle(theme.textPrimary)
@@ -554,6 +561,37 @@ struct EmptyStateView: View {
     }
 }
 
+/// The team's message over the list ("We're working on sync, out next week"), written in the
+/// dashboard. Read out as the team's, like their comments.
+struct TeamNote: View {
+    let text: String
+
+    @Environment(\.feeqdStrings) private var strings
+    @Environment(\.feeqdTheme) private var theme
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: "megaphone.fill")
+                .font(.subheadline)
+                .foregroundStyle(theme.primary)
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(theme.surface, in: RoundedRectangle(cornerRadius: theme.cornerRadius + 4, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: theme.cornerRadius + 4, style: .continuous)
+                .strokeBorder(theme.textSecondary.opacity(0.15))
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(strings(.commentTeam)): \(text)")
+    }
+}
+
 struct ErrorStateView: View {
     let error: FeeqdError
     let retry: () -> Void
@@ -601,39 +639,111 @@ struct ReviewCard: View {
     @Environment(\.feeqdStrings) private var strings
     @Environment(\.feeqdTheme) private var theme
     @Environment(\.openURL) private var openURL
+    @ScaledMetric(relativeTo: .headline) private var iconSize: CGFloat = 48
 
     private var reviewURL: URL? { URL(string: "https://apps.apple.com/app/id\(appStoreID)?action=write-review") }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(strings(.reviewTitle))
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(theme.textPrimary)
-            HStack(spacing: 4) {
-                ForEach(0..<5, id: \.self) { _ in
-                    Image(systemName: "star.fill")
+        VStack(spacing: 12) {
+            // Centred, top to bottom, like the system's own rating cards: icon, title, app, stars.
+            VStack(spacing: 4) {
+                if let icon = AppIcon.image {
+                    icon
+                        .resizable()
+                        .frame(width: iconSize, height: iconSize)
+                        .clipShape(RoundedRectangle(cornerRadius: iconSize * 0.225, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: iconSize * 0.225, style: .continuous)
+                                .strokeBorder(theme.textSecondary.opacity(0.2), lineWidth: 0.5)
+                        )
+                        .padding(.bottom, 6)
+                        .accessibilityHidden(true)
                 }
+                Text(strings(.reviewTitle))
+                    .font(.headline)
+                    .foregroundStyle(theme.textPrimary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                // The app's name, as under an App Store title, unless the team's title says it already.
+                if let name = AppIcon.name, !strings(.reviewTitle).localizedCaseInsensitiveContains(name) {
+                    Text(name)
+                        .font(.subheadline)
+                        .foregroundStyle(theme.textSecondary)
+                        .lineLimit(1)
+                }
+                HStack(spacing: 4) {
+                    ForEach(0..<5, id: \.self) { _ in
+                        Image(systemName: "star.fill")
+                    }
+                }
+                .font(.title3)
+                .foregroundStyle(Color.yellow)
+                .padding(.top, 4)
+                .accessibilityHidden(true)
             }
-            .font(.footnote)
-            .foregroundStyle(Color.orange)
-            .accessibilityHidden(true)
+            .frame(maxWidth: .infinity)
+            .accessibilityElement(children: .combine)
             Button {
                 if let reviewURL { openURL(reviewURL) }
             } label: {
                 Text(strings(.reviewButton))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .background(Capsule().fill(theme.primary))
+                    .font(.body.weight(.semibold))
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderedProminent)
+            .feeqdCapsuleBorder()
+            .controlSize(.large)
+            .tint(theme.primary)
         }
-        .padding(14)
+        .padding(16)
+        .frame(maxWidth: 360)
         .background(
-            RoundedRectangle(cornerRadius: theme.cornerRadius, style: .continuous)
-                .fill(theme.textSecondary.opacity(0.14))
+            RoundedRectangle(cornerRadius: theme.cornerRadius + 4, style: .continuous)
+                .fill(theme.surface)
         )
+        .overlay(
+            // The surface is near the chat's background by design; the hairline is what makes it a card.
+            RoundedRectangle(cornerRadius: theme.cornerRadius + 4, style: .continuous)
+                .strokeBorder(theme.textSecondary.opacity(0.18), lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
     }
+}
+
+private extension View {
+    /// Capsule on every iOS the SDK runs on; the Mac build is only there for the tests.
+    @ViewBuilder
+    func feeqdCapsuleBorder() -> some View {
+        if #available(macOS 14.0, *) {
+            buttonBorderShape(.capsule)
+        } else {
+            self
+        }
+    }
+}
+
+/// The app's own icon and name, read once from its Info.plist: what the review is for. Nothing
+/// when the app does not list its icon files (an asset catalog always does on iOS).
+@MainActor
+enum AppIcon {
+    static let image: Image? = {
+        #if canImport(UIKit)
+        let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any]
+        let primary = icons?["CFBundlePrimaryIcon"] as? [String: Any]
+        guard let file = (primary?["CFBundleIconFiles"] as? [String])?.last,
+              let image = UIImage(named: file) else { return nil }
+        return Image(uiImage: image)
+        #else
+        return nil
+        #endif
+    }()
+
+    static let name: String? = {
+        let info = Bundle.main.infoDictionary
+        let name = (info?["CFBundleDisplayName"] as? String) ?? (info?["CFBundleName"] as? String)
+        return name?.isEmpty == false ? name : nil
+    }()
 }
 
 /// "Not sent yet" under something the user wrote that is waiting to go out.

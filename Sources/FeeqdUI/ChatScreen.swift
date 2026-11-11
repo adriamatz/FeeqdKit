@@ -116,6 +116,8 @@ struct ChatBubble: View {
     @Environment(\.feeqdTheme) private var theme
 
     private var isMine: Bool { message.sender == .device }
+    /// A review request reads in the user's language while it is the team's saved message.
+    private var text: String { message.reviewAppStoreID == nil ? message.body : strings.reviewMessage(message.body) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -135,7 +137,7 @@ struct ChatBubble: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(theme.textSecondary)
                 }
-                Text(message.body)
+                Text(text)
                     .font(.body)
                     .foregroundStyle(isMine ? Color.white : theme.textPrimary)
                     .padding(.horizontal, 12)
@@ -160,7 +162,7 @@ struct ChatBubble: View {
             if !isMine { Spacer(minLength: 48) }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(isMine ? strings(.chatYou) : (message.senderName ?? strings(.chatTeam))): \(message.body)")
+        .accessibilityLabel("\(isMine ? strings(.chatYou) : (message.senderName ?? strings(.chatTeam))): \(text)")
     }
 }
 

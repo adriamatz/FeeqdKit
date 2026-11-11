@@ -56,6 +56,7 @@ final class ChatContextTests: XCTestCase {
         XCTAssertNotNil(device["model"])
         XCTAssertNotNil(device["os"])
         XCTAssertNotNil(device["locale"])
+        XCTAssertEqual(device["language"], Locale.preferredLanguages.first, "what the SDK's texts show in")
         XCTAssertEqual(device["sdk"], FeeqdCoreVersion.current)
     }
 

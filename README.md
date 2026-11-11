@@ -2,7 +2,7 @@
 
 In-app feedback for iOS: requests with votes, comments, a way to ask for something new, and a private chat with your team, backed by [Feeqd](https://feeqd.com). SwiftUI, iOS 16+, no dependencies.
 
-> **0.5.0.** Talks to production out of the box. You need a Feeqd plan that includes the iOS SDK, and the publishable key from **App & SDK** in the dashboard.
+> **0.5.1.** Talks to production out of the box. You need a Feeqd plan that includes the iOS SDK, and the publishable key from **App & SDK** in the dashboard.
 
 ## Installation
 
@@ -11,7 +11,7 @@ In Xcode: **File → Add Package Dependencies…** and paste `https://github.com
 Or in `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/adriamatz/FeeqdKit", from: "0.5.0")
+.package(url: "https://github.com/adriamatz/FeeqdKit", from: "0.5.1")
 ```
 
 and add `FeeqdKit` to your target's dependencies.
@@ -82,6 +82,27 @@ Feeqd.ChatView(pushed: true, context: ["view": "club", "club": "Fae & Fury", "ch
 
 It goes with the first message of that visit, with the device's model, OS, locale and app version, and the dashboard's inbox shows it beside the conversation and over the message. `view` names the screen. Without a context nothing is sent.
 
+### New since last visit
+
+To put a dot or a number on your own "Feedback" row or tab:
+
+```swift
+let board = await Feeqd.boardStatus()            // one request per board; fails closed
+if board.hasNew {
+    // a dot, or board.newRequests, on your entry point
+}
+```
+
+It counts the public requests other people sent since this user last had the list open in `FeedbackView`, across the boards that screen shows. A user who never opened it gets 0, not the whole board; opening the list brings it back to 0, and `reset()` forgets the visits. It reads the newest page only, so the count stops at 100 per board. Call it again when the feedback screen closes.
+
+
+### Who may add requests
+
+The dashboard has a switch for it: **Only paying users can add requests** (In-app experience → List). With it on, a user may add requests when FeeqdKit knows they pay: an App Store purchase read with `collectPurchases: true`, or a payment passed in `updateUser(payment:)`. It only works when the app gives FeeqdKit one of those two ways to know; otherwise the switch does nothing and everyone can add requests, so a team can't lock out a whole app by mistake. With `updateUser`, it goes by payments from the first one passed in this run: a user you never pass one for is not blocked until then. The answer follows a purchase read when the app comes back to the foreground, and each `updateUser`.
+
+Code wins when it says: `canSubmit: true` or `false` in the configuration, then `Feeqd.setCanSubmit(_:)` whenever that changes (`nil` hands it back to the dashboard). That is only needed for an app that bills outside the App Store and doesn't pass `payment` to `updateUser`. Blocked, the "+" stays and tapping it shows `submit.blocked` with an OK button instead of the form; votes and comments are never blocked. With new requests off in the dashboard there is no "+" for anyone. The server never hears who pays for this.
+
+A request with text in it asks before Cancel throws it away, and the sheet cannot be swiped down while it has text (`submit.discard.*`).
 
 ### Options
 
@@ -92,12 +113,14 @@ Feeqd.configure(FeeqdConfiguration(
     theme: FeeqdTheme(primary: .orange),            // wins over the dashboard's colours
     strings: ["board.title": "Ideas"],              // wins over the dashboard's copy
     showsChatButton: true,                          // the chat button on the board (default)
-    translation: .automatic                         // "See translation" on other languages (default); .hidden turns it off
+    translation: .automatic,                        // "See translation" on other languages (default); .hidden turns it off
+    canSubmit: nil                                  // nil: the dashboard decides (default); false: votes and comments only, "+" shows submit.blocked
 ))
 
 Feeqd.setIdentityToken(jwt)                          // a user your server vouched for
 Feeqd.updateUser(id: "42", name: "Marta", email: "marta@example.com")   // unsigned; shown as unverified
 Feeqd.reset()                                        // on sign-out: forgets the user and takes a new device id
+Feeqd.setCanSubmit(isPro)                            // who may add requests changed; the screen follows at once (nil: the dashboard decides)
 ```
 
 ### Look and feel

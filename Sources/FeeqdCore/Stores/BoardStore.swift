@@ -30,6 +30,8 @@ package final class BoardStore: ObservableObject {
     /// their detail still reads, votes and counts like any other.
     @Published package private(set) var opened: [String: Entry] = [:]
     @Published package private(set) var isLoadingMore = false
+    /// The rest of the board is still coming in after the first page.
+    @Published private var isLoadingRest = false
     @Published package private(set) var query = ""
     /// What the person picked, kept across launches. Used only while the dashboard allows it.
     @Published private var chosenOrder: ListOrder?
@@ -45,6 +47,8 @@ package final class BoardStore: ObservableObject {
     private let defaults: UserDefaults
 
     package static let orderKey = "com.feeqd.feeqdkit.listOrder"
+    /// Per board, the Open / Done counts the last time it was loaded whole.
+    package static let countsKey = "com.feeqd.feeqdkit.tabCounts"
 
     /// Pages are as big as the reader serves (200): the Open / Done tabs split what is loaded, so
     /// one page holding the whole board is what makes their counts exact on almost every app.
@@ -126,10 +130,26 @@ package final class BoardStore: ObservableObject {
         opened[entry.id] = entry
     }
 
-    /// How many requests a tab holds, and whether that is all of them: past the first page the
-    /// rest of the board is not loaded yet, so the count is a floor ("200+").
-    package func count(in tab: SDKConfig.Tab) -> (count: Int, isComplete: Bool) {
-        (entries(in: tab).count, tab == .mine || !hasMore)
+    /// How many requests a tab holds, and whether that is all of them. While the rest of the
+    /// board is still coming in, the counts from the last time it was all loaded, or none: a
+    /// floor that turned into the real number a second later made the tabs jump on every visit.
+    /// A board too big to load whole keeps its floor ("1000+").
+    package func count(in tab: SDKConfig.Tab) -> (count: Int?, isComplete: Bool) {
+        if tab == .mine || !hasMore { return (entries(in: tab).count, true) }
+        if isLoadingRest { return (rememberedCounts[tab.rawValue], true) }
+        return (entries(in: tab).count, false)
+    }
+
+    private var rememberedCounts: [String: Int] {
+        guard let board = boardID else { return [:] }
+        return (defaults.dictionary(forKey: Self.countsKey)?[board] as? [String: Int]) ?? [:]
+    }
+
+    private func rememberCounts() {
+        guard let board = boardID, !hasMore, query.isEmpty else { return }
+        var all = defaults.dictionary(forKey: Self.countsKey) ?? [:]
+        all[board] = [SDKConfig.Tab.open, .done].reduce(into: [String: Int]()) { $0[$1.rawValue] = entries(in: $1).count }
+        defaults.set(all, forKey: Self.countsKey)
     }
 
     /// There is no status filter on the list endpoint yet (spec H5), so tabs filter what is loaded.
@@ -252,7 +272,12 @@ package final class BoardStore: ObservableObject {
     /// small enough to hold. A failed page stops quietly: scrolling still loads it later.
     private func loadRest() async {
         isLoadingMore = true
-        defer { isLoadingMore = false }
+        isLoadingRest = true
+        defer {
+            isLoadingMore = false
+            isLoadingRest = false
+            rememberCounts()
+        }
         while hasMore, query.isEmpty, entries.count < Self.wholeBoardLimit, let board = boardID, !Task.isCancelled {
             guard let next = try? await fetchPage(board: board, page: (pagination?.page ?? 1) + 1) else { return }
             apply(next, replacing: false)
@@ -284,6 +309,14 @@ package final class BoardStore: ObservableObject {
             if FeeqdError.isCancellation(error) { return }
             lastActionError = FeeqdError.wrap(error)
         }
+    }
+
+    /// The list is on screen: nothing it holds, or older, is new any more for `Feeqd.boardStatus()`.
+    /// The newest row's time too, for a device clock behind the server's.
+    package func markSeen(now: Date = Date()) {
+        guard let board = boardID else { return }
+        let newest = entries.map(\.createdAt).max() ?? now
+        BoardVisits(defaults: defaults).markSeen(board, at: max(now, newest))
     }
 
     // MARK: Votes

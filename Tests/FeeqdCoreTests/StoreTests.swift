@@ -163,6 +163,35 @@ final class StoreTests: XCTestCase {
         XCTAssertTrue(store.count(in: .open).isComplete)
     }
 
+    func testABoardLoadedWholeRemembersItsCountsForTheNextVisit() async throws {
+        let config = try Fixture.data("sdk_config")
+        func page(_ number: Int, state: String, hasNext: Bool) -> Data {
+            Data("""
+            {"items": [{"id": "e\(number)", "board_id": "b", "content": {"title": "Entry \(number)"}, "state": "\(state)",
+              "created_at": "2026-09-29T10:00:00", "vote_count": \(10 - number), "comment_count": 0}],
+             "pagination": {"page": \(number), "page_size": 1, "total_items": 2, "total_pages": 2, "has_next": \(hasNext)}}
+            """.utf8)
+        }
+        StubURLProtocol.responder = { request in
+            let url = request.url
+            let path = url?.path ?? ""
+            if path == "/sdk/config" { return .json(200, config) }
+            if path.hasPrefix("/public/feedback/") {
+                let second = url?.query?.contains("page=2") == true
+                return .json(200, second ? page(2, state: "planned", hasNext: false) : page(1, state: "completed", hasNext: true))
+            }
+            return .init(status: 404)
+        }
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "counts-\(UUID().uuidString)"))
+        let store = BoardStore(client: .stubbed(), pageSize: 1, defaults: defaults)
+        await store.load()
+        let board = try XCTUnwrap(store.boardID)
+        let saved = defaults.dictionary(forKey: BoardStore.countsKey)?[board] as? [String: Int]
+        XCTAssertEqual(saved, ["open": 1, "done": 1], "the next visit shows these while the rest loads")
+        XCTAssertEqual(store.count(in: .done).count, 1)
+        XCTAssertTrue(store.count(in: .done).isComplete)
+    }
+
     func testLoadMoreFollowsTheLastRowOfTheTab() async throws {
         try routeCapturedResponses()
         let store = BoardStore(client: .stubbed())

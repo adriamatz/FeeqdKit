@@ -70,7 +70,8 @@ public enum Feeqd {
             strings: StringTable(overrides: configuration.strings),
             themeOverrides: ThemeOverrides(configuration.theme),
             showsChatButton: configuration.showsChatButton,
-            translation: configuration.translation.mode
+            translation: configuration.translation.mode,
+            submitGate: SubmitGate(canSubmit: configuration.canSubmit, readsPurchases: configuration.collectPurchases)
         )
         state.withLock { $0 = context }
         Task {
@@ -78,7 +79,7 @@ public enum Feeqd {
             await client.announceLaunch(preferredBoardID: configuration.boardID)
             PendingWritesWatcher.start(client: client)
         }
-        if configuration.collectPurchases { PurchaseWatcher.start(client: client) }
+        if configuration.collectPurchases { PurchaseWatcher.start(client: client, gate: context.submitGate) }
     }
 
     /// A signed-in user, vouched for by your server: a JWT signed with the key's signing
@@ -93,12 +94,17 @@ public enum Feeqd {
     ///
     /// `payment` is what this user pays you, for apps that bill outside the App Store. Leave it
     /// out otherwise: with `collectPurchases` on, FeeqdKit reads App Store purchases on its own.
+    /// Once you pass one, the dashboard's "Only paying users can add requests" goes by it.
     public static func updateUser(id: String?, name: String? = nil, email: String? = nil, payment: FeeqdPayment? = nil) {
-        guard let client = context?.client else { return }
+        guard let context else { return }
+        let client = context.client
         let summary = payment?.summary
         inOrder {
             await client.setClaimedIdentity(id: id, name: name, email: email)
-            if let summary { await client.setManualPayment(summary) }
+            if let summary {
+                await client.setManualPayment(summary)
+                context.submitGate.setPays(await client.hasPayment)
+            }
         }
     }
 
@@ -108,11 +114,31 @@ public enum Feeqd {
     /// does not see the previous one's chat or requests. A Feeqd screen still on display (in a
     /// tab, say) starts over, so nothing loaded for the previous user stays on it.
     public static func reset() {
-        guard let client = context?.client else { return }
+        guard let context else { return }
+        let client = context.client
         inOrder {
             await client.reset()
+            // Their payment went with them; whether the SDK knows who pays stays.
+            if context.submitGate.pays != nil { context.submitGate.setPays(false) }
+            BoardVisits().clear()
             await MainActor.run { NotificationCenter.default.post(name: didReset, object: nil) }
         }
+    }
+
+    /// Whether this user may add requests, when it changes after launch: a user who subscribes,
+    /// or whose subscription lapses, mid-session. A Feeqd screen on display follows at once.
+    ///
+    /// ```swift
+    /// Feeqd.setCanSubmit(isPro)
+    /// ```
+    ///
+    /// Blocked, the "+" stays and tapping it shows `submit.blocked` with an OK button instead of
+    /// the form. Votes and comments are never blocked. True or false, it wins over the
+    /// dashboard's "Only paying users can add requests"; `nil` hands the decision back to it.
+    /// When new requests are off in the dashboard, there is no "+" for anyone. Before
+    /// `configure`, it does nothing.
+    public static func setCanSubmit(_ canSubmit: Bool?) {
+        context?.submitGate.set(canSubmit)
     }
 
     /// Whether the chat is available to this user, and whether the team replied since they last
@@ -132,6 +158,24 @@ public enum Feeqd {
         let acceptingNew = (try? await client.config())?.acceptingConversations ?? true
         let status = await ChatStatus.check(client, acceptingNew: acceptingNew)
         return FeeqdChatStatus(isAvailable: status.available, hasUnread: status.hasUnread)
+    }
+
+    /// How many requests are new since this user last opened the board in `FeedbackView`, to
+    /// badge your own entry point:
+    ///
+    /// ```swift
+    /// let board = await Feeqd.boardStatus()
+    /// if board.hasNew { /* a dot, or board.newRequests, on your "Feedback" row */ }
+    /// ```
+    ///
+    /// New means public and written by someone else, on the boards the feedback screen shows.
+    /// Never opened, it is 0, not the whole board. Fails closed: without network or before
+    /// `configure`, 0. Opening the list brings it back to 0. One request per board (plus the
+    /// config, usually a `304`); the newest 100 are read, so the count stops there.
+    public static func boardStatus() async -> FeeqdBoardStatus {
+        guard let context, let config = try? await context.client.config() else { return FeeqdBoardStatus(newRequests: 0) }
+        let boards = BoardNews.boardIDs(config: config, preferredBoardID: context.preferredBoardID)
+        return FeeqdBoardStatus(newRequests: await BoardNews.count(context.client, lastSeen: BoardVisits().lastSeen(boards)))
     }
 
     /// The private chat with your team on its own, for when you want it somewhere other than
@@ -233,6 +277,12 @@ public struct FeeqdConfiguration: Sendable {
     /// the device's. Translated on the device by Apple's Translation framework: nothing leaves
     /// the phone. iOS 18 and later; before, it never shows.
     public var translation: FeeqdTranslation
+    /// Whether this user may add requests, as your app decides. False, the "+" stays and tapping
+    /// it shows `submit.blocked` instead of the form; votes and comments are unchanged. Nil (the
+    /// default) leaves it to the dashboard: everyone, or with "Only paying users can add
+    /// requests" on, the users FeeqdKit knows pay (`collectPurchases`, or a payment passed in
+    /// `updateUser`). Change it later with `Feeqd.setCanSubmit(_:)`.
+    public var canSubmit: Bool?
 
     public init(
         apiKey: String,
@@ -244,7 +294,8 @@ public struct FeeqdConfiguration: Sendable {
         appVersion: String? = nil,
         showsChatButton: Bool = true,
         collectPurchases: Bool = false,
-        translation: FeeqdTranslation = .automatic
+        translation: FeeqdTranslation = .automatic,
+        canSubmit: Bool? = nil
     ) {
         self.apiKey = apiKey
         self.boardID = boardID
@@ -256,6 +307,7 @@ public struct FeeqdConfiguration: Sendable {
         self.showsChatButton = showsChatButton
         self.collectPurchases = collectPurchases
         self.translation = translation
+        self.canSubmit = canSubmit
     }
 }
 
@@ -302,6 +354,17 @@ public struct FeeqdChatStatus: Sendable, Equatable {
     public init(isAvailable: Bool, hasUnread: Bool) {
         self.isAvailable = isAvailable
         self.hasUnread = hasUnread
+    }
+}
+
+/// The answer of `Feeqd.boardStatus()`.
+public struct FeeqdBoardStatus: Sendable, Equatable {
+    /// Public requests by others since this user last opened the board; at most 100 per board.
+    public let newRequests: Int
+    public var hasNew: Bool { newRequests > 0 }
+
+    public init(newRequests: Int) {
+        self.newRequests = newRequests
     }
 }
 

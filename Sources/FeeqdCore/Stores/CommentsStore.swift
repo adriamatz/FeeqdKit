@@ -55,10 +55,15 @@ package final class CommentsStore: ObservableObject {
     package func load(ownInReview: Bool = false) async {
         self.ownInReview = ownInReview
         await loadPending()
+        // Asked alongside the thread: the author's own comments the team has not approved yet,
+        // which the thread itself never holds. Any failure, a backend without the route
+        // included, leaves the thread as it reads on its own.
+        async let held = (try? client.myPendingComments(boardID: boardID, entryID: entryID)) ?? []
         do {
-            comments = try await ownInReview
+            let thread = try await ownInReview
                 ? client.myComments(boardID: boardID, entryID: entryID, page: 1, pageSize: 100).items
                 : client.comments(boardID: boardID, entryID: entryID, page: 1, pageSize: 100).items
+            comments = Self.merging(held: await held, into: thread)
             isOpen = true
             phase = .loaded
         } catch {
@@ -76,6 +81,13 @@ package final class CommentsStore: ObservableObject {
                 lastError = wrapped
             }
         }
+    }
+
+    /// The thread with the author's held comments added, once each. One the thread already has
+    /// was published meanwhile: the thread's copy, a normal comment, is the one kept.
+    package static func merging(held: [Comment], into thread: [Comment]) -> [Comment] {
+        var seen = Set(thread.map(\.id))
+        return thread + held.filter { seen.insert($0.id).inserted }
     }
 
     /// Replies only to a root: the backend rejects a reply to a reply (`400 invalid_parent`).

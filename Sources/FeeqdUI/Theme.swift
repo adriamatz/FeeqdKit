@@ -17,6 +17,9 @@ package struct FeeqdContext: Sendable {
     package let showsChatButton: Bool
     /// The "See translation" button on requests and comments.
     package let translation: TranslationOffer.Mode
+    /// Whether the app lets this user add requests, and whether they pay. The one thing here
+    /// that changes after launch.
+    package let submitGate: SubmitGate
 
     package init(
         client: FeeqdClient,
@@ -24,7 +27,8 @@ package struct FeeqdContext: Sendable {
         strings: StringTable,
         themeOverrides: ThemeOverrides,
         showsChatButton: Bool = true,
-        translation: TranslationOffer.Mode = .automatic
+        translation: TranslationOffer.Mode = .automatic,
+        submitGate: SubmitGate = SubmitGate()
     ) {
         self.client = client
         self.preferredBoardID = preferredBoardID
@@ -32,6 +36,7 @@ package struct FeeqdContext: Sendable {
         self.themeOverrides = themeOverrides
         self.showsChatButton = showsChatButton
         self.translation = translation
+        self.submitGate = submitGate
     }
 }
 
@@ -233,11 +238,13 @@ extension View {
     /// it at the bottom); otherwise a field that hides once the list scrolls.
     ///
     /// iOS 27 reopens a minimized search right after its close button is tapped when another
-    /// item shares the trailing corner, so there the field sits under the title instead.
+    /// item shares the trailing corner, so there the field sits under the title instead. It stays
+    /// there with tabs in the bar too: a field that hides drew itself over the Open / Done picker
+    /// while the screen was pushed, then slid away.
     @ViewBuilder
     func feeqdSearchable(text: Binding<String>, prompt: String, asButton: Bool) -> some View {
         #if os(iOS)
-        if #available(iOS 27, *), asButton {
+        if #available(iOS 27, *) {
             searchable(text: text, placement: .navigationBarDrawer(displayMode: .always), prompt: prompt)
         } else if #available(iOS 26, *), asButton {
             // A magnifier in the bar that opens the field.

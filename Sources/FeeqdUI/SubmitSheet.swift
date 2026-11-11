@@ -17,6 +17,12 @@ struct SubmitSheet: View {
     /// It could not go out and was kept to be sent later.
     @State private var kept = false
     @State private var error: FeeqdError?
+    @State private var confirmingDiscard = false
+
+    /// Something typed and not sent yet: closing asks first, by Cancel or by swiping down.
+    private var hasDraft: Bool {
+        !sent && !(title.feeqdTrimmed.isEmpty && details.feeqdTrimmed.isEmpty)
+    }
 
     var body: some View {
         NavigationStack {
@@ -29,7 +35,9 @@ struct SubmitSheet: View {
             .feeqdInlineTitle(theme)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(sent ? strings(.submitDone) : strings(.submitCancel)) { dismiss() }
+                    Button(sent ? strings(.submitDone) : strings(.submitCancel)) {
+                        if hasDraft { confirmingDiscard = true } else { dismiss() }
+                    }
                 }
                 if !sent {
                     ToolbarItem(placement: .confirmationAction) {
@@ -38,7 +46,13 @@ struct SubmitSheet: View {
                     }
                 }
             }
+            .confirmationDialog(strings(.submitDiscardTitle), isPresented: $confirmingDiscard, titleVisibility: .visible) {
+                Button(strings(.submitDiscardConfirm), role: .destructive) { dismiss() }
+                Button(strings(.submitDiscardKeep), role: .cancel) {}
+            }
         }
+        // A draft can't be swiped away: Cancel asks before it goes.
+        .interactiveDismissDisabled(hasDraft)
         // Possible duplicates while typing: advice, never a block.
         .task(id: title) {
             let text = title.feeqdTrimmed

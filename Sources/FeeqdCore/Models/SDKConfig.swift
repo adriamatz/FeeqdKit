@@ -225,6 +225,10 @@ package struct SDKConfig: Decodable, Equatable, Sendable {
         package var showVoteCount = true
         package var showCommentCount = true
         package var submitEnabled = true
+        /// Only users the SDK knows pay may add requests (`SubmitAccess.resolve`).
+        package var submitPaidOnly = false
+        /// The team's message over the list (`list.note`) is kept but not shown.
+        package var listNoteHidden = false
         /// Forced on by the server on the plans that carry the badge; the SDK obeys and offers no switch.
         package var poweredByFeeqd = false
         package var emailField: EmailField = .none
@@ -319,7 +323,7 @@ package struct SDKConfig: Decodable, Equatable, Sendable {
 
 extension SDKConfig.Behaviour: Decodable {
     enum CodingKeys: String, CodingKey {
-        case allowVoteUndo, showVoteCount, showCommentCount, submitEnabled, poweredByFeeqd, emailField, defaultSort, userSort, rowStyle, tabs, layout
+        case allowVoteUndo, showVoteCount, showCommentCount, submitEnabled, submitPaidOnly, listNoteHidden, poweredByFeeqd, emailField, defaultSort, userSort, rowStyle, tabs, layout
     }
 
     package init(from decoder: Decoder) throws {
@@ -329,6 +333,8 @@ extension SDKConfig.Behaviour: Decodable {
         if let value = try? c.decode(Bool.self, forKey: .showVoteCount) { showVoteCount = value }
         if let value = try? c.decode(Bool.self, forKey: .showCommentCount) { showCommentCount = value }
         if let value = try? c.decode(Bool.self, forKey: .submitEnabled) { submitEnabled = value }
+        if let value = try? c.decode(Bool.self, forKey: .submitPaidOnly) { submitPaidOnly = value }
+        if let value = try? c.decode(Bool.self, forKey: .listNoteHidden) { listNoteHidden = value }
         if let value = try? c.decode(Bool.self, forKey: .poweredByFeeqd) { poweredByFeeqd = value }
         if let value = try? c.decode(Bool.self, forKey: .userSort) { userSort = value }
         if let value = (try? c.decode(String.self, forKey: .rowStyle)).flatMap(SDKConfig.RowStyle.init(rawValue:)) {

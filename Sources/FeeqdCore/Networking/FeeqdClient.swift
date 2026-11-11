@@ -2,7 +2,7 @@ import Foundation
 import os
 
 package enum FeeqdCoreVersion {
-    package static let current = "0.5.0"
+    package static let current = "0.5.1"
 }
 
 package struct ClientConfiguration: Sendable {
@@ -132,6 +132,9 @@ package actor FeeqdClient {
 
     package var payment: PaymentSummary? { manualPayment ?? storePayment }
 
+    /// The user pays now, by the app's word or the App Store's: what "only paying users" asks.
+    package var hasPayment: Bool { payment != nil }
+
     // MARK: Reads
 
     /// `GET /sdk/config`, revalidated with the ETag of the previous answer (`304` → cached copy).
@@ -211,6 +214,37 @@ package actor FeeqdClient {
             "GET", .reader, "/sdk/boards/\(boardID)/mine/\(entryID)/comments", query: query, credential: .keyAndDevice
         )
         return try decode(Page<Comment>.self, data)
+    }
+
+    /// `GET /sdk/boards/{b}/entries/{e}/my-pending-comments`: this device's comments on the entry
+    /// that the board holds for the team, which no public read returns. Each comes back marked
+    /// `isPendingModeration`. A backend from before this route answers a bare 404 (`isMissingRoute`).
+    package func myPendingComments(boardID: String, entryID: String) async throws -> [Comment] {
+        let (data, _) = try await send(
+            "GET", .gatherer, "/sdk/boards/\(boardID)/entries/\(entryID)/my-pending-comments", credential: .keyAndDevice
+        )
+        return try Self.decodePendingComments(data)
+    }
+
+    package static func decodePendingComments(_ data: Data) throws -> [Comment] {
+        struct Item: Decodable, Sendable {
+            let comment: Comment
+            let state: String?
+            enum CodingKeys: String, CodingKey { case state = "moderation_state" }
+            init(from decoder: Decoder) throws {
+                comment = try Comment(from: decoder)
+                state = try? decoder.container(keyedBy: CodingKeys.self).decode(String.self, forKey: .state)
+            }
+        }
+        struct Body: Decodable, Sendable { let items: [Lossy<Item>]? }
+        return (try JSONDecoder.feeqd.decode(Body.self, from: data).items ?? []).compactMap { lossy in
+            // Only what is still waiting: a published one is in the thread itself, and one the
+            // team turned down is not shown at all.
+            guard let item = lossy.value, item.state == nil || item.state == "pending" else { return nil }
+            var comment = item.comment
+            comment.isPendingModeration = true
+            return comment
+        }
     }
 
     package func similar(boardID: String, title: String) async throws -> [SimilarEntry] {

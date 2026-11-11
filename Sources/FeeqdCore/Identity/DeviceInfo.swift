@@ -36,6 +36,9 @@ package enum DeviceInfo {
             "sdk": sdkVersion,
             "locale": Locale.current.identifier,
         ]
+        // The language the SDK's texts show in, which the locale is not when the app itself is
+        // not translated: the dashboard writes a review request in it.
+        if let language = Locale.preferredLanguages.first { info["language"] = language }
         if let app = appVersion ?? (bundle?["CFBundleShortVersionString"] as? String) { info["app"] = app }
         if let build = bundle?["CFBundleVersion"] as? String { info["build"] = build }
         return info

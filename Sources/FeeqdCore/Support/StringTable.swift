@@ -52,6 +52,10 @@ package enum StringKey: String, CaseIterable, Sendable {
     case submitAnonymousNotAllowed = "submit.anonymousNotAllowed"
     case submitQuotaExceeded = "submit.quotaExceeded"
     case submitClosed = "submit.closed"
+    case submitBlocked = "submit.blocked"
+    case submitDiscardTitle = "submit.discard.title"
+    case submitDiscardConfirm = "submit.discard.confirm"
+    case submitDiscardKeep = "submit.discard.keep"
     case poweredBy = "poweredBy"
     case chatTitle = "chat.title"
     case chatButton = "chat.button"
@@ -65,6 +69,7 @@ package enum StringKey: String, CaseIterable, Sendable {
     case chatQuotaExceeded = "chat.quotaExceeded"
     case chatTooLong = "chat.tooLong"
     case chatUnread = "chat.unread"
+    case reviewMessage = "review.message"
     case reviewTitle = "review.title"
     case reviewButton = "review.button"
     case sectionRequests = "hub.requests"
@@ -80,14 +85,26 @@ package enum StringKey: String, CaseIterable, Sendable {
     case roadmapLaneDone = "roadmap.lane.done"
     case roadmapBugFix = "roadmap.bugFix"
     case sections = "hub.sections"
+    case statusPending = "status.pending"
+    case statusInReview = "status.inReview"
+    case statusPlanned = "status.planned"
+    case statusInProgress = "status.inProgress"
+    case statusCompleted = "status.completed"
+    case statusDeclined = "status.declined"
+    case statusReported = "status.reported"
+    case statusConfirmed = "status.confirmed"
+    case statusKnownIssue = "status.knownIssue"
+    case statusFixing = "status.fixing"
+    case statusFixed = "status.fixed"
+    case statusCannotReproduce = "status.cannotReproduce"
 }
 
 /// Every string the SDK shows, and where it comes from.
 ///
 /// Resolution, first match wins: the integrator's override in code → the dashboard's copy for
 /// the user's locale (`es-MX`) → for its base language (`es`) → the bundled table for the
-/// locale → for the base language → English. The bundled tables are complete in English and
-/// Spanish, so the first launch without network still reads right.
+/// locale → for the base language → English. The bundled tables (BundledStrings.swift) are
+/// complete in 17 languages, so the first launch without network still reads right.
 package struct StringTable: Sendable {
     package let overrides: [String: String]
     package let remote: [String: [String: String]]
@@ -119,176 +136,74 @@ package struct StringTable: Sendable {
         return Self.bundled["en"]?[key] ?? key
     }
 
-    /// `es-MX` → `es-MX`, `es_MX`, `es`: remote tables are keyed by whatever the dashboard saved.
+    /// A name the team wrote for the user's language (or the integrator in code), and nothing
+    /// otherwise: for names with no bundled text, like a tab's, that fall back to something else.
+    package func custom(_ key: String) -> String? {
+        if let value = overrides[key], !value.isEmpty { return value }
+        for tag in candidates {
+            if let value = remote[tag]?[key]?.trimmingCharacters(in: .whitespaces), !value.isEmpty { return value }
+        }
+        return nil
+    }
+
+    /// The team's message over the list: theirs for the user's language, then their English one,
+    /// as every other text falls back to English. It has no bundled text: left empty, the app
+    /// shows nothing.
+    package var listNote: String? {
+        let key = "list.note"
+        let note = custom(key) ?? remote["en"]?[key]
+        guard let note = note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty else { return nil }
+        return note
+    }
+
+    /// What a review request reads as. The dashboard sends the team's saved message in the
+    /// user's language when it knows it, and in English when it does not (a reply on a request).
+    /// While the text is one of the saved or bundled review messages, in any language, the user
+    /// reads the one for their language; anything the team typed by hand stays as it is.
+    package func reviewMessage(_ body: String) -> String {
+        let sent = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = StringKey.reviewMessage.rawValue
+        let known = remote.values.compactMap { $0[key]?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            + Self.bundled.values.compactMap { $0[key] }
+        guard !sent.isEmpty, known.contains(sent) else { return body }
+        return self(.reviewMessage)
+    }
+
+    /// The names Feeqd gives a new board's statuses. One still called this was never renamed,
+    /// so the app names it in the user's language; a renamed one keeps the team's name.
+    private static let stockStatuses: [String: StringKey] = [
+        "Pending": .statusPending,
+        "In review": .statusInReview,
+        "Planned": .statusPlanned,
+        "In progress": .statusInProgress,
+        "Completed": .statusCompleted,
+        "Declined": .statusDeclined,
+        "Reported": .statusReported,
+        "Confirmed": .statusConfirmed,
+        "Known issue": .statusKnownIssue,
+        "Fixing": .statusFixing,
+        "Fixed": .statusFixed,
+        "Cannot reproduce": .statusCannotReproduce,
+    ]
+
+    /// A status's name for the user: translated while it is Feeqd's own, the team's otherwise,
+    /// and its slug made readable when the board does not know it.
+    package func status(_ label: String?, slug: String) -> String {
+        guard let label, !label.isEmpty else { return slug.replacingOccurrences(of: "_", with: " ").capitalized }
+        guard let key = Self.stockStatuses[label] else { return label }
+        return self(key)
+    }
+
+    /// `zh-Hans-US` → `zh-Hans-US`, `zh_Hans_US`, `zh-Hans`, `zh`: remote tables are keyed by
+    /// whatever the dashboard saved, and a script (`zh-Hans`) sits between the region and the base.
     private var candidates: [String] {
         languages.flatMap { tag -> [String] in
-            let base = tag.split(whereSeparator: { $0 == "-" || $0 == "_" }).first.map(String.init) ?? tag
-            return [tag, tag.replacingOccurrences(of: "-", with: "_"), base]
+            let parts = tag.split(whereSeparator: { $0 == "-" || $0 == "_" }).map(String.init)
+            guard !parts.isEmpty else { return [tag] }
+            let prefixes = (1..<parts.count).reversed().map { parts.prefix($0).joined(separator: "-") }
+            return [tag, tag.replacingOccurrences(of: "-", with: "_")] + prefixes
         }
     }
 
-    package static let bundled: [String: [String: String]] = [
-        "en": [
-            "board.title": "Feedback",
-            "tab.open": "Open",
-            "tab.done": "Done",
-            "search.prompt": "Search requests",
-            "empty.title": "Nothing here yet",
-            "empty.message": "Be the first to ask for something.",
-            "search.empty": "No requests match your search.",
-            "tab.empty": "Nothing in this list yet.",
-            "error.title": "Couldn't load",
-            "error.message": "Check your connection and try again.",
-            "error.retry": "Try again",
-            "error.rateLimited": "Too many requests. Try again in a minute.",
-            "common.ok": "OK",
-            "common.close": "Close",
-            "vote.upvote": "Upvote",
-            "vote.voted": "Voted",
-            "entry.anonymousAuthor": "Anonymous",
-            "comments.title": "Comments",
-            "comments.empty": "No comments yet.",
-            "entry.only_you_hint": "Only you and the team see this for now.",
-            "tab.mine": "Mine",
-            "sort.title": "Sort",
-            "sort.votes": "Most voted",
-            "sort.recent": "Newest",
-            "sort.status": "By status",
-            "list.top": "Most requested",
-            "comment.placeholder": "Add a comment",
-            "comment.replyPlaceholder": "Write a reply",
-            "comment.send": "Send",
-            "comment.reply": "Reply",
-            "comment.team": "Team",
-            "comment.pinned": "Pinned",
-            "comment.pending": "Waiting for the team to approve it.",
-            "send.pending": "Not sent yet. It will go out on its own.",
-            "translate.see": "See translation",
-            "translate.original": "See original",
-            "submit.cta": "New request",
-            "submit.title": "New request",
-            "submit.titlePlaceholder": "What would you like?",
-            "submit.descriptionPlaceholder": "Add details (optional)",
-            "submit.send": "Send",
-            "submit.cancel": "Cancel",
-            "submit.similar": "Already asked",
-            "submit.sent.title": "Sent",
-            "submit.sent.message": "It will appear in the list once the team reviews it.",
-            "submit.kept.title": "Saved",
-            "submit.kept.message": "It couldn't go out just now. It will be sent on its own as soon as it can.",
-            "submit.done": "Done",
-            "submit.anonymousNotAllowed": "This board doesn't accept anonymous requests.",
-            "submit.quotaExceeded": "The team can't take new requests right now. Try again later.",
-            "submit.closed": "The team isn't taking new requests right now. You can still vote and comment.",
-            "poweredBy": "Powered by Feeqd",
-            "chat.title": "Message us",
-            "chat.button": "Message the team",
-            "chat.empty.title": "Talk to the team",
-            "chat.empty.message": "Something wrong, or an idea? Write here. Only the team sees it.",
-            "chat.placeholder": "Message",
-            "chat.send": "Send",
-            "chat.team": "Team",
-            "chat.you": "You",
-            "chat.closed": "Marked as done. Write again if you need anything else.",
-            "chat.quotaExceeded": "The team can't take new conversations right now. Try again later.",
-            "chat.tooLong": "That message is too long.",
-            "chat.unread": "New reply",
-            "review.title": "Enjoying the app?",
-            "review.button": "Rate on the App Store",
-            "hub.requests": "Feature Requests",
-            "hub.bugs": "Bugs",
-            "hub.roadmap": "Roadmap",
-            "home.title": "How can we help?",
-            "home.subtitle": "The team reads everything here.",
-            "home.chat": "Message the team",
-            "roadmap.empty": "Nothing here yet.",
-            "roadmap.feature": "Feature",
-            "roadmap.lane.planned": "Planned",
-            "roadmap.lane.progress": "In progress",
-            "roadmap.lane.done": "Done",
-            "roadmap.bugFix": "Bug fix",
-            "hub.sections": "Sections",
-        ],
-        "es": [
-            "board.title": "Sugerencias",
-            "tab.open": "Abiertas",
-            "tab.done": "Hechas",
-            "search.prompt": "Buscar sugerencias",
-            "empty.title": "Todavía no hay nada",
-            "empty.message": "Sé el primero en pedir algo.",
-            "search.empty": "Ninguna sugerencia coincide con tu búsqueda.",
-            "tab.empty": "Todavía no hay nada en esta lista.",
-            "error.title": "No se pudo cargar",
-            "error.message": "Revisa tu conexión y vuelve a intentarlo.",
-            "error.retry": "Reintentar",
-            "error.rateLimited": "Demasiadas peticiones. Vuelve a intentarlo en un minuto.",
-            "common.ok": "OK",
-            "common.close": "Cerrar",
-            "vote.upvote": "Votar",
-            "vote.voted": "Votada",
-            "entry.anonymousAuthor": "Anónimo",
-            "comments.title": "Comentarios",
-            "comments.empty": "Todavía no hay comentarios.",
-            "entry.only_you_hint": "Por ahora solo lo veis tú y el equipo.",
-            "tab.mine": "Mías",
-            "sort.title": "Ordenar",
-            "sort.votes": "Más votadas",
-            "sort.recent": "Más nuevas",
-            "sort.status": "Por estado",
-            "list.top": "La más pedida",
-            "comment.placeholder": "Añade un comentario",
-            "comment.replyPlaceholder": "Escribe una respuesta",
-            "comment.send": "Enviar",
-            "comment.reply": "Responder",
-            "comment.team": "Equipo",
-            "comment.pinned": "Fijado",
-            "comment.pending": "Pendiente de que el equipo lo apruebe.",
-            "send.pending": "Aún no se ha enviado. Se enviará solo.",
-            "translate.see": "Ver traducción",
-            "translate.original": "Ver original",
-            "submit.cta": "Nueva sugerencia",
-            "submit.title": "Nueva sugerencia",
-            "submit.titlePlaceholder": "¿Qué te gustaría?",
-            "submit.descriptionPlaceholder": "Añade detalles (opcional)",
-            "submit.send": "Enviar",
-            "submit.cancel": "Cancelar",
-            "submit.similar": "Ya lo han pedido",
-            "submit.sent.title": "Enviada",
-            "submit.sent.message": "Aparecerá en la lista cuando el equipo la revise.",
-            "submit.kept.title": "Guardada",
-            "submit.kept.message": "Ahora no se ha podido enviar. Se enviará sola en cuanto se pueda.",
-            "submit.done": "Hecho",
-            "submit.anonymousNotAllowed": "Este tablero no acepta sugerencias anónimas.",
-            "submit.quotaExceeded": "El equipo no puede recibir sugerencias nuevas ahora mismo. Inténtalo más tarde.",
-            "submit.closed": "El equipo no está recibiendo sugerencias nuevas ahora mismo. Puedes seguir votando y comentando.",
-            "poweredBy": "Con la tecnología de Feeqd",
-            "chat.title": "Escríbenos",
-            "chat.button": "Escribir al equipo",
-            "chat.empty.title": "Habla con el equipo",
-            "chat.empty.message": "¿Algo va mal o tienes una idea? Escribe aquí. Solo lo ve el equipo.",
-            "chat.placeholder": "Mensaje",
-            "chat.send": "Enviar",
-            "chat.team": "Equipo",
-            "chat.you": "Tú",
-            "chat.closed": "Marcada como resuelta. Escribe de nuevo si necesitas algo más.",
-            "chat.quotaExceeded": "El equipo no puede abrir conversaciones nuevas ahora mismo. Inténtalo más tarde.",
-            "chat.tooLong": "El mensaje es demasiado largo.",
-            "chat.unread": "Respuesta nueva",
-            "review.title": "¿Te gusta la app?",
-            "review.button": "Valorar en la App Store",
-            "hub.requests": "Peticiones",
-            "hub.bugs": "Errores",
-            "hub.roadmap": "Roadmap",
-            "home.title": "¿En qué podemos ayudarte?",
-            "home.subtitle": "El equipo lee todo lo que llega aquí.",
-            "home.chat": "Escribir al equipo",
-            "roadmap.empty": "Todavía no hay nada.",
-            "roadmap.feature": "Novedad",
-            "roadmap.lane.planned": "Previsto",
-            "roadmap.lane.progress": "En curso",
-            "roadmap.lane.done": "Hecho",
-            "roadmap.bugFix": "Arreglo",
-            "hub.sections": "Secciones",
-        ],
-    ]
+    package static let bundled: [String: [String: String]] = bundledTables
 }

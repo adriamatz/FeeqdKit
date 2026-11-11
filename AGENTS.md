@@ -13,7 +13,9 @@ Most of what the feedback screen shows is set by the team in the Feeqd dashboard
 | Which statuses are visible in the app | Dashboard |
 | Default sort, vote counts, comment counts, undoing a vote, the status badge | Dashboard |
 | Asking for an email on new requests, allowing new requests at all | Dashboard |
+| Letting only paying users add requests | Dashboard (List → Only paying users can add requests), with `collectPurchases: true` or `updateUser(payment:)` so FeeqdKit knows who pays; code (`canSubmit`) only for other rules, see the recipe |
 | Turning the chat on | Dashboard (and the key must carry chat) |
+| A message from the team at the top of the list ("Sync is out next week"), and hiding it | Dashboard (Sections → Message at the top; "Show in the app" off hides it and keeps the text) |
 | Colours and copy for every build at once | Dashboard (code can override, see below) |
 
 Code is only for: integrating, where the screen is opened, who the user is, signing out, and colours or copy that must be fixed in the build.
@@ -26,10 +28,12 @@ Code is only for: integrating, where the screen is opened, who the user is, sign
 
 ## Install
 
-Swift Package Manager, product `FeeqdKit`:
+Swift Package Manager, product `FeeqdKit`, always at the newest release: look the newest tag up
+(`git ls-remote --tags https://github.com/adriamatz/FeeqdKit`) instead of using a version you
+remember, and use Up to Next Major Version from it. The version below may be behind.
 
 ```swift
-.package(url: "https://github.com/adriamatz/FeeqdKit", from: "0.5.0")
+.package(url: "https://github.com/adriamatz/FeeqdKit", from: "0.5.1")
 ```
 
 In an Xcode project: File → Add Package Dependencies… → `https://github.com/adriamatz/FeeqdKit`, and add `FeeqdKit` to the app target.
@@ -47,7 +51,8 @@ Feeqd.configure(FeeqdConfiguration(
     appVersion: String? = nil,           // defaults to CFBundleShortVersionString
     showsChatButton: Bool = true,        // the chat button on the feedback screen
     collectPurchases: Bool = false,      // read App Store purchases (StoreKit), read-only
-    translation: FeeqdTranslation = .automatic  // "See translation" on requests and comments
+    translation: FeeqdTranslation = .automatic, // "See translation" on requests and comments
+    canSubmit: Bool? = nil               // nil: the dashboard decides; false: "+" shows submit.blocked
 ))
 // readerURL / gathererURL also exist: leave them alone, the defaults are production.
 
@@ -62,9 +67,13 @@ Feeqd.setIdentityToken(_ token: String?) // a JWT your server signed: verified
 Feeqd.updateUser(id: String?, name: String? = nil, email: String? = nil,
                  payment: FeeqdPayment? = nil)   // unsigned: shown as unverified
 Feeqd.reset()                            // on sign-out
+Feeqd.setCanSubmit(_ canSubmit: Bool?)   // who may add requests changed; nil: the dashboard decides
 
 // Chat entry point of your own.
 let status = await Feeqd.chatStatus()    // FeeqdChatStatus(isAvailable:, hasUnread:)
+
+// Feedback entry point of your own: requests new since the user last opened the board.
+let board = await Feeqd.boardStatus()    // FeeqdBoardStatus(newRequests:), .hasNew
 
 // Types
 FeeqdTheme(primary:, background:, surface:, textPrimary:, textSecondary:,
@@ -77,6 +86,8 @@ Feeqd.version                            // the SDK version string
 ```
 
 ## Recipes
+
+Before any recipe in an app that already has FeeqdKit: check it is on the newest release (`git ls-remote --tags https://github.com/adriamatz/FeeqdKit`) and update the package to it first if it is older. These recipes are written for the newest API; an older version may not have what they use.
 
 ### Integrate
 
@@ -157,6 +168,56 @@ Group {
 
 Only show it when `isAvailable` is true: it fails closed (no network, a key without chat, chat off in the dashboard). To keep the chat button off the feedback screen and offer it only this way, set `showsChatButton: false`.
 
+### Only paying users can add requests
+
+Everyone votes and comments; only paying users get the form. This is a dashboard switch: In-app
+experience → List → **Only paying users can add requests**. It needs FeeqdKit to know who pays,
+one of:
+
+- `collectPurchases: true` in the configuration (App Store purchases, read at launch and on each
+  return to the foreground), or
+- a payment in `Feeqd.updateUser(id:…, payment: .monthly(9.99, currency: "EUR"))`, for an app
+  that bills outside the App Store. It goes by payments from the first one passed in a run.
+
+With neither, the switch does nothing and everyone can add requests. Write no code for it beyond
+those.
+
+Code only for a rule of the app's own (an app that bills outside the App Store without passing
+`payment`, or one that isn't about paying). `canSubmit` set to true or false wins over the
+switch; `nil` (the default) leaves it to the dashboard:
+
+```swift
+Feeqd.configure(FeeqdConfiguration(apiKey: "feeqd_pk_…", canSubmit: isPro))
+
+// wherever that changes: a purchase, a restore, an expiry, sign-in, sign-out
+Feeqd.setCanSubmit(isPro)
+```
+
+Blocked, the "+" stays and tapping it shows an alert with an OK button. Its text is
+`submit.blocked`: per language in the dashboard (Texts → New request), or fixed in code with
+`strings: ["submit.blocked": "Only Pro members can suggest new features. You can still vote."]`.
+A screen on display follows `setCanSubmit`, a purchase read and `updateUser` at once. Never block
+voting or comments, and don't hide the "+" or wrap `FeedbackView` in a gate of your own. When the
+dashboard turns new requests off, there is no "+" for anyone, whatever `canSubmit` says.
+
+### Show a dot when there are new requests
+
+```swift
+@State private var board = FeeqdBoardStatus(newRequests: 0)
+@State private var showFeedback = false
+
+Button { showFeedback = true } label: {
+    Label("Send feedback", systemImage: board.hasNew ? "bubble.left.and.text.bubble.right.fill" : "bubble.left.and.text.bubble.right")
+}
+.badge(board.newRequests)   // or a dot of the app's own when board.hasNew
+.task { board = await Feeqd.boardStatus() }
+.sheet(isPresented: $showFeedback, onDismiss: { Task { board = await Feeqd.boardStatus() } }) {
+    Feeqd.FeedbackView()
+}
+```
+
+`newRequests` counts the public requests other people sent since this user last had the list open in `FeedbackView`, on the boards it shows. Never opened, it is 0; opening the list brings it back to 0, and `reset()` forgets it. It fails closed (no network: 0) and stops at 100 per board. Check it again when the feedback screen closes, as above, or from a `NavigationLink`'s parent `.task`, which runs again on coming back.
+
 ### Say where the chat was opened from (0.5+)
 
 ```swift
@@ -187,7 +248,7 @@ Feeqd.configure(FeeqdConfiguration(
 
 Keys you can override (anything else is ignored):
 
-`board.title`, `submit.cta`, `submit.title`, `submit.send`, `submit.sent.title`, `submit.sent.message`, `empty.title`, `empty.message`, `search.prompt`, `tab.open`, `tab.done`, `tab.mine`, `chat.button`, `chat.title`, `chat.empty.title`, `chat.empty.message`, `home.title`, `home.subtitle`, `hub.requests`, `hub.bugs`, `hub.roadmap`, `roadmap.empty`, `translate.see`, `translate.original`.
+`board.title`, `submit.cta`, `submit.title`, `submit.send`, `submit.sent.title`, `submit.sent.message`, `empty.title`, `empty.message`, `search.prompt`, `tab.open`, `tab.done`, `tab.mine`, `chat.button`, `chat.title`, `chat.empty.title`, `chat.empty.message`, `home.title`, `home.subtitle`, `hub.requests`, `hub.bugs`, `hub.roadmap`, `roadmap.empty`, `translate.see`, `translate.original`, `submit.blocked`.
 
 ```swift
 strings: ["board.title": "Ideas", "submit.cta": "Suggest something"]

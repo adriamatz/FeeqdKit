@@ -105,12 +105,71 @@ final class SupportTests: XCTestCase {
         let overridden = StringTable(overrides: ["board.title": "Roadmap"], remote: remote, languages: ["es-MX"])
         XCTAssertEqual(overridden(.boardTitle), "Roadmap", "code wins over everything")
 
-        let german = StringTable(languages: ["de-DE"])
-        XCTAssertEqual(german(.submitSend), "Send", "falls back to English")
+        let russian = StringTable(languages: ["ru-RU"])
+        XCTAssertEqual(russian(.submitSend), "Send", "falls back to English")
+    }
+
+    func testStatusesAreTranslatedUntilRenamed() {
+        let spanish = StringTable(languages: ["es-ES"])
+        XCTAssertEqual(spanish.status("Planned", slug: "planned"), "Previsto")
+        XCTAssertEqual(spanish.status("Fixing", slug: "in_progress"), "Arreglando", "a bug board's in_progress")
+        XCTAssertEqual(spanish.status("Next up", slug: "planned"), "Next up", "a renamed status keeps the team's name")
+        XCTAssertEqual(spanish.status(nil, slug: "known_issue"), "Known Issue", "an unknown status reads its slug")
+
+        let team = StringTable(remote: ["es": ["status.planned": "Lo haremos"]], languages: ["es-ES"])
+        XCTAssertEqual(team.status("Planned", slug: "planned"), "Lo haremos", "the team's text for the language")
+    }
+
+    func testCustomNamesAreOnlyTheTeams() {
+        let table = StringTable(
+            remote: ["es": ["hub.board.bX1": "Ideas", "hub.roadmap": " "]],
+            languages: ["es-MX"]
+        )
+        XCTAssertEqual(table.custom("hub.board.bX1"), "Ideas", "found through the base language")
+        XCTAssertNil(table.custom("hub.roadmap"), "a blank name is no name")
+        XCTAssertNil(StringTable(languages: ["en"]).custom("hub.board.bX1"), "no bundled fallback")
+    }
+
+    func testTheDashboardCanHideTheNoteAndKeepIt() throws {
+        let hidden = try JSONDecoder().decode(SDKConfig.Behaviour.self, from: Data(#"{"listNoteHidden":true}"#.utf8))
+        XCTAssertTrue(hidden.listNoteHidden)
+        let missing = try JSONDecoder().decode(SDKConfig.Behaviour.self, from: Data("{}".utf8))
+        XCTAssertFalse(missing.listNoteHidden, "a written note shows unless the dashboard hides it")
+    }
+
+    func testTheTeamsNoteShowsOnlyWhenWritten() {
+        let table = StringTable(
+            remote: ["es": ["list.note": "  Estamos con la sincronización.\n"], "en": ["list.note": ""]],
+            languages: ["es-MX"]
+        )
+        XCTAssertEqual(table.listNote, "Estamos con la sincronización.", "the team's text for the language, trimmed")
+        XCTAssertNil(StringTable(remote: ["en": ["list.note": ""]], languages: ["en"]).listNote, "empty means hidden")
+        XCTAssertNil(StringTable(remote: ["en": ["list.note": " \n"]], languages: ["en"]).listNote, "blank lines are empty")
+        XCTAssertNil(StringTable(languages: ["en"]).listNote, "nothing bundled")
+        XCTAssertEqual(StringTable(remote: ["en": ["list.note": "Out next week"]], languages: ["de"]).listNote, "Out next week", "the English one for a language with none")
+        XCTAssertNil(StringTable(remote: ["es": ["list.note": "La semana que viene"]], languages: ["de"]).listNote, "never another language's")
+    }
+
+    func testAReviewRequestReadsInTheUsersLanguage() {
+        let spanish = StringTable(remote: ["en": ["review.message": "Rate us, please!"]], languages: ["es-ES"])
+        let stock = "If the app helps you, a review on the App Store would mean a lot to us."
+        XCTAssertEqual(spanish.reviewMessage(stock), "Si la app te ayuda, una reseña en la App Store nos ayudaría mucho.")
+        XCTAssertEqual(spanish.reviewMessage("Rate us, please!\n"), spanish(.reviewMessage), "the team's saved text, in any language")
+        XCTAssertEqual(spanish.reviewMessage("Thanks for the report! Mind rating us?"), "Thanks for the report! Mind rating us?", "typed by hand")
+
+        let team = StringTable(remote: ["es": ["review.message": "¿Nos dejas una reseña?"]], languages: ["es-MX"])
+        XCTAssertEqual(team.reviewMessage(stock), "¿Nos dejas una reseña?", "the team's own text for the language")
+    }
+
+    func testScriptsAndRegionsFindTheirTable() {
+        XCTAssertEqual(StringTable(languages: ["zh-Hans-US"])(.tabDone), "已完成", "iOS puts the script before the region")
+        XCTAssertEqual(StringTable(languages: ["zh-Hant-TW"])(.boardTitle), "意見回饋")
+        XCTAssertEqual(StringTable(languages: ["pt-PT"])(.submitSend), StringTable(languages: ["pt-BR"])(.submitSend), "Portugal reads Brazil's")
+        XCTAssertEqual(StringTable(languages: ["nb-NO"])(.tabOpen), "Åpne")
     }
 
     func testBundledTablesAreComplete() {
-        for language in ["en", "es"] {
+        for language in StringTable.bundled.keys.sorted() {
             let table = StringTable.bundled[language] ?? [:]
             let missing = StringKey.allCases.map(\.rawValue).filter { table[$0] == nil }
             XCTAssertEqual(missing, [], "\(language) is missing keys")

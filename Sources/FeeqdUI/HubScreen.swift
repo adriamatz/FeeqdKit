@@ -14,11 +14,15 @@ final class HubModel: ObservableObject {
     @Published private(set) var config: SDKConfig = .fallback
     @Published private(set) var plan = HubPlan.make(config: .fallback, preferredBoardID: nil)
     @Published var chat = ChatStatus.unavailable
+    /// The app's say (`Feeqd.setCanSubmit`, and whether the user pays), kept here so the "+"
+    /// redraws when it changes.
+    @Published private(set) var gate: SubmitGate.State
 
     let client: FeeqdClient
     let roadmap: RoadmapStore
     private let preferredBoardID: String?
     private let showsChatButton: Bool
+    private let submitGate: SubmitGate
     private var stores: [String: BoardStore] = [:]
 
     init(context: FeeqdContext) {
@@ -26,6 +30,8 @@ final class HubModel: ObservableObject {
         roadmap = RoadmapStore(client: context.client)
         preferredBoardID = context.preferredBoardID
         showsChatButton = context.showsChatButton
+        submitGate = context.submitGate
+        gate = context.submitGate.current
         // The config read at launch: the tabs are there from the first frame, not after a request.
         if let cached = client.lastConfig {
             let cachedPlan = HubPlan.make(config: cached, preferredBoardID: preferredBoardID)
@@ -66,6 +72,12 @@ final class HubModel: ObservableObject {
         config = resolved
     }
 
+    var submitAccess: SubmitAccess { .resolve(config: config, canSubmit: gate.canSubmit, pays: gate.pays) }
+
+    func refreshCanSubmit() {
+        gate = submitGate.current
+    }
+
     func refreshChat() async {
         guard showsChatButton, plan.chatEnabled else {
             chat = .unavailable
@@ -93,6 +105,8 @@ package struct HubScreen: View {
     @StateObject private var model: HubModel
     @State private var selected: String?
     @State private var showingSubmit = false
+    /// The app keeps new requests for some users (`Feeqd.setCanSubmit`) and this is not one.
+    @State private var showingSubmitBlocked = false
     @State private var showingChat = false
     /// The front page's section open. A state and a destination, not value links: those, pushed
     /// onto the host's stack, went back to the list instead of opening.
@@ -132,6 +146,10 @@ package struct HubScreen: View {
         .environment(\.feeqdTheme, theme)
         .environment(\.feeqdTranslation, context.translation)
         .task { await model.load() }
+        .onReceive(NotificationCenter.default.publisher(for: SubmitGate.didChange)) { _ in model.refreshCanSubmit() }
+        .alert(strings(.submitBlocked), isPresented: $showingSubmitBlocked) {
+            Button(strings(.ok), role: .cancel) {}
+        }
         .sheet(isPresented: $showingSubmit, onDismiss: { Task { await model.refreshConfig() } }) {
             if let boardID = current?.boardID {
                 SubmitSheet(store: model.store(for: boardID))
@@ -189,10 +207,13 @@ package struct HubScreen: View {
                 .toolbar { closeItem }
         case .loaded:
             if plan.style == .home {
-                HomeScreen(plan: plan, chat: model.chat, label: label(for:), openSection: { openedSection = $0 }) {
+                HomeScreen(
+                    plan: plan, chat: model.chat, label: label(for:), openSection: { openedSection = $0 },
+                    showsNote: !model.config.behaviour.listNoteHidden
+                ) {
                     showingChat = true
                 }
-                    .navigationTitle(plan.title)
+                    .navigationTitle(title)
                     .feeqdInlineTitle(theme)
                     .toolbar { closeItem }
             } else if let current {
@@ -205,7 +226,7 @@ package struct HubScreen: View {
 
     private func sectionScreen(_ section: HubSection, fromHome: Bool) -> some View {
         sectionContent(section)
-            .navigationTitle(fromHome || plan.style == .single ? label(for: section) : (plan.style == .chips ? plan.title : ""))
+            .navigationTitle(fromHome || plan.style == .single ? label(for: section) : (plan.style == .chips ? title : ""))
             .feeqdInlineTitle(theme)
             .safeAreaInset(edge: .top, spacing: 0) {
                 if !fromHome && plan.style == .chips { chips }
@@ -222,8 +243,12 @@ package struct HubScreen: View {
                     ToolbarItem(placement: .principal) { titleMenu }
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    if section.boardID != nil && model.config.behaviour.submitEnabled && model.config.acceptingEntries {
+                    if section.boardID != nil && model.submitAccess != .hidden {
                         Button {
+                            if model.submitAccess == .blocked {
+                                showingSubmitBlocked = true
+                                return
+                            }
                             selected = section.id
                             showingSubmit = true
                         } label: {
@@ -265,12 +290,31 @@ package struct HubScreen: View {
         }
     }
 
+    /// What older dashboards saved as a name before a name could be left empty: the English
+    /// defaults, which read as "use the app's own" rather than as the team's choice.
+    private static let stockLabels: Set<String> = ["Requests", "Bugs", "Roadmap", "Chat"]
+
+    /// A tab's name: the team's for the user's language, then the one name an older dashboard
+    /// saved for every language, then the app's own.
     private func label(for section: HubSection) -> String {
-        if !section.label.isEmpty { return section.label }
+        let key: String
+        switch section.kind {
+        case let .board(id, _): key = "hub.board.b\(id)"
+        case .roadmap: key = StringKey.sectionRoadmap.rawValue
+        }
+        if let name = strings.custom(key) { return name }
+        if !section.label.isEmpty, !Self.stockLabels.contains(section.label) { return section.label }
         switch section.kind {
         case let .board(_, isBugs): return strings(isBugs ? .sectionBugs : .sectionRequests)
         case .roadmap: return strings(.sectionRoadmap)
         }
+    }
+
+    /// The hub's title, found the same way as a tab's name.
+    private var title: String {
+        if let name = strings.custom(StringKey.boardTitle.rawValue) { return name }
+        if !plan.title.isEmpty, plan.title != "Feedback" { return plan.title }
+        return strings(.boardTitle)
     }
 
     // MARK: Switchers
@@ -398,6 +442,9 @@ struct BoardListView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(theme.background.ignoresSafeArea())
             .task { if store.needsLoad { await store.load() } }
+            // On leaving too: what arrived while it was open was seen as well.
+            .onAppear { store.markSeen() }
+            .onDisappear { store.markSeen() }
             .task(id: searchText) {
                 guard !searchText.isEmpty || !store.query.isEmpty else { return }
                 try? await Task.sleep(nanoseconds: 350_000_000)
@@ -427,6 +474,13 @@ struct BoardListView: View {
             case .loaded:
                 EmptyStateView(isSearch: !store.query.isEmpty)
                     .refreshable { await store.load() }
+                    .safeAreaInset(edge: .top, spacing: 0) {
+                        if store.query.isEmpty, !store.config.behaviour.listNoteHidden, let note = strings.listNote {
+                            TeamNote(text: note)
+                                .padding(.horizontal, 16)
+                                .padding(.top, 8)
+                        }
+                    }
             case .idle, .loading:
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -447,7 +501,14 @@ struct BoardListView: View {
                 Picker("", selection: $tab) {
                     ForEach(store.visibleTabs, id: \.self) { option in
                         let total = store.count(in: option)
-                        Text("\(tabLabel(option)) (\(total.count)\(total.isComplete ? "" : "+"))").tag(option)
+                        Group {
+                            if let count = total.count {
+                                Text("\(tabLabel(option)) (\(count)\(total.isComplete ? "" : "+"))")
+                            } else {
+                                Text(tabLabel(option))
+                            }
+                        }
+                        .tag(option)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -551,6 +612,16 @@ struct BoardListView: View {
         let style = store.config.behaviour.rowStyle
         let browsing = store.query.isEmpty
         return List {
+            if browsing, !store.config.behaviour.listNoteHidden, let note = strings.listNote {
+                // A row, not pinned with the tabs: it scrolls away once read.
+                Section {
+                    TeamNote(text: note)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+                }
+                .listSectionSeparator(.hidden)
+                .listRowBackground(theme.background)
+            }
             if store.order == .status && browsing && !rows.isEmpty {
                 // By status: each status's name over its requests, the furthest along first. The
                 // names are rows, not section headers, which would put a table's gap around each.
@@ -646,6 +717,8 @@ struct HomeScreen: View {
     let chat: ChatStatus
     let label: (HubSection) -> String
     let openSection: (HubSection) -> Void
+    /// The dashboard can keep the team's message without showing it.
+    var showsNote = true
     let openChat: () -> Void
 
     @Environment(\.feeqdStrings) private var strings
@@ -657,6 +730,9 @@ struct HomeScreen: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(strings(.homeTitle)).font(.title2.bold())
                     Text(strings(.homeSubtitle)).font(.subheadline).foregroundStyle(.secondary)
+                }
+                if showsNote, let note = strings.listNote {
+                    TeamNote(text: note)
                 }
                 if chat.available {
                     Button(action: openChat) {
@@ -784,13 +860,26 @@ struct RoadmapView: View {
         .padding(.vertical, 10)
     }
 
-    /// A team roadmap's lanes are named here, in the user's language; the admin's columns keep theirs.
+    /// The dashboard's columns and their names in English before a name could be left empty.
+    private static let stockColumns: [String: (key: StringKey, label: String)] = [
+        "next": (.roadmapLanePlanned, "Planned"),
+        "now": (.roadmapLaneProgress, "In progress"),
+        "shipped": (.roadmapLaneDone, "Shipped"),
+    ]
+
+    /// A column's name in the user's language: a team roadmap's lanes are always the app's; the
+    /// dashboard's columns are the team's for that language, then their one name, then the app's.
     private func laneLabel(_ column: HubLayout.Column) -> String {
         switch column.id {
         case "lane.open": return strings(.roadmapLanePlanned)
         case "lane.progress": return strings(.roadmapLaneProgress)
         case "lane.closed": return strings(.roadmapLaneDone)
-        default: return column.label
+        default:
+            if let name = strings.custom("roadmap.column.\(column.id)") { return name }
+            if let stock = Self.stockColumns[column.id], column.label.isEmpty || column.label == stock.label {
+                return strings(stock.key)
+            }
+            return column.label
         }
     }
 
