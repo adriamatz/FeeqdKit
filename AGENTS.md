@@ -33,7 +33,7 @@ Swift Package Manager, product `FeeqdKit`, always at the newest release: look th
 remember, and use Up to Next Major Version from it. The version below may be behind.
 
 ```swift
-.package(url: "https://github.com/adriamatz/FeeqdKit", from: "0.5.1")
+.package(url: "https://github.com/adriamatz/FeeqdKit", from: "0.5.2")
 ```
 
 In an Xcode project: File → Add Package Dependencies… → `https://github.com/adriamatz/FeeqdKit`, and add `FeeqdKit` to the app target.

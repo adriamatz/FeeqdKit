@@ -160,9 +160,9 @@ struct EntryDetailScreen: View {
                         }
                     }
                 } label: {
-                    Image(systemName: "arrow.up.circle.fill").font(.title2)
+                    SendButtonLabel()
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
                 .disabled(draft.feeqdTrimmed.isEmpty || comments.isSending)
                 .accessibilityLabel(strings(.commentSend))
             }

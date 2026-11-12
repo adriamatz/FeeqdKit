@@ -99,9 +99,9 @@ package struct ChatScreen: View {
                     if await store.send(text) { draft = "" }
                 }
             } label: {
-                Image(systemName: "arrow.up.circle.fill").font(.title2)
+                SendButtonLabel()
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
             .disabled(draft.feeqdTrimmed.isEmpty || store.isSending)
             .accessibilityLabel(strings(.chatSend))
         }

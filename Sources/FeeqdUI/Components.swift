@@ -757,3 +757,20 @@ struct PendingSendNote: View {
         }
     }
 }
+
+/// The round send button next to a composer: as tall as a one-line field, in the theme's colour,
+/// grey while there is nothing to send.
+struct SendButtonLabel: View {
+    @Environment(\.feeqdTheme) private var theme
+    @Environment(\.isEnabled) private var isEnabled
+    @ScaledMetric(relativeTo: .body) private var size: CGFloat = 36
+
+    var body: some View {
+        Image(systemName: "arrow.up")
+            .font(.body.weight(.bold))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(Circle().fill(isEnabled ? theme.primary : theme.textSecondary.opacity(0.35)))
+            .contentShape(Circle())
+    }
+}
